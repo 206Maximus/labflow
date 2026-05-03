@@ -2,7 +2,7 @@
 models.py — SQLAlchemy ORM 모델 정의 (PostgreSQL)
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -38,11 +38,21 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     email = Column(String(150), unique=True, nullable=False)
+    hashed_password = Column(String(255), nullable=True)    # bcrypt 해시 (기존 계정 호환을 위해 nullable)
     role = Column(String(50), default="researcher")      # researcher / admin
+
+    # ── 안전 교육 인증 ────────────────────────────────────────────────────────
+    safety_certified = Column(Boolean, default=False)           # 인증 여부
+    safety_certified_at = Column(DateTime, nullable=True)       # 최초/최신 인증 날짜
+    safety_certified_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 인증 부여 관리자 ID
+    safety_reminder_sent_at = Column(DateTime, nullable=True)   # 최근 리마인드 발송 날짜
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     reservations = relationship("Reservation", back_populates="user")
     logs = relationship("UsageLog", back_populates="user")
+    noshow_records = relationship("NoShowRecord", foreign_keys="NoShowRecord.user_id", back_populates="user")
+    equipment_bans = relationship("EquipmentBan", foreign_keys="EquipmentBan.user_id", back_populates="user")
 
 
 class Reservation(Base):
@@ -59,6 +69,10 @@ class Reservation(Base):
         Enum(ReservationStatus),
         default=ReservationStatus.pending
     )
+    checkin_time = Column(DateTime, nullable=True)           # 실제 체크인 시각
+    checkout_time = Column(DateTime, nullable=True)          # 실제 체크아웃 시각
+    early_checkout = Column(Boolean, default=False)          # 예정보다 일찍 종료 여부
+    gcal_event_id = Column(String(255), nullable=True)       # Google Calendar 이벤트 ID
     created_at = Column(DateTime, default=datetime.utcnow)
 
     equipment = relationship("Equipment", back_populates="reservations")
@@ -104,3 +118,37 @@ class UsageLog(Base):
 
     equipment = relationship("Equipment")
     user = relationship("User", back_populates="logs")
+
+
+# ─── 노쇼(No-Show) 관련 ──────────────────────────────────────────────────────────
+
+class NoShowRecord(Base):
+    """노쇼 기록 테이블 — 사용자가 체크인 없이 예약 시간을 넘긴 경우"""
+    __tablename__ = "noshow_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    equipment_id = Column(Integer, ForeignKey("equipment.id"), nullable=False)
+    reservation_id = Column(Integer, ForeignKey("reservations.id"), nullable=False, unique=True)
+    # 해당 노쇼 발생 시점의 누적 스택 수 (1, 2, 3, 4, ...)
+    stack_at_time = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="noshow_records")
+    equipment = relationship("Equipment")
+    reservation = relationship("Reservation")
+
+
+class EquipmentBan(Base):
+    """장비 사용 금지 테이블 — 노쇼 3회 누적 시 해당 장비 3일 사용 금지"""
+    __tablename__ = "equipment_bans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    equipment_id = Column(Integer, ForeignKey("equipment.id"), nullable=False)
+    banned_from = Column(DateTime, nullable=False, default=datetime.utcnow)
+    banned_until = Column(DateTime, nullable=False)     # banned_from + 3일
+    reason = Column(Text, nullable=True)                # "노쇼 3회 누적"
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="equipment_bans")
+    equipment = relationship("Equipment")

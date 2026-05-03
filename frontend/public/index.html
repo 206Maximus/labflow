@@ -3,10 +3,263 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MasitdaTeam — 연구실 장비 관리 플랫폼</title>
+    <title>LabFlow — 연구실 장비 관리 플랫폼</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { background: #F7F8FA; }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background-color: #F1F5F9;
+        background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+        background-size: 28px 28px;
+        font-family: 'Inter', -apple-system, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+        color: #0F172A;
+        min-height: 100vh;
+        font-size: 16px;
+      }
+
+      @keyframes popIn {
+        from { transform: translateX(-50%) scale(0.75); opacity: 0; }
+        to   { transform: translateX(-50%) scale(1);    opacity: 1; }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.2; }
+      }
+      @keyframes fadeSlideIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0.4); }
+        50%       { box-shadow: 0 0 0 8px rgba(37,99,235,0); }
+      }
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* ── 모바일 전용 스타일 ─────────────────────────────── */
+      .mobile-bottom-nav {
+        display: none;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: #1E3A8A;
+        border-top: 1px solid rgba(255,255,255,0.15);
+        z-index: 200;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      .mobile-bottom-nav .nav-items {
+        display: flex;
+        justify-content: space-around;
+        align-items: stretch;
+        height: 58px;
+      }
+      .mobile-bottom-nav .nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        background: transparent;
+        border: none;
+        color: rgba(255,255,255,0.45);
+        cursor: pointer;
+        padding: 6px 2px;
+        transition: color 0.15s;
+        font-family: 'Inter', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        min-width: 0;
+      }
+      .mobile-bottom-nav .nav-item.active { color: #60A5FA; }
+      .mobile-bottom-nav .nav-item .nav-icon { font-size: 21px; line-height: 1; }
+      .mobile-bottom-nav .nav-item .nav-label {
+        font-size: 9px; font-weight: 600; letter-spacing: 0.2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        max-width: 44px;
+      }
+
+      /* 더보기 드로어 */
+      .mobile-more-drawer {
+        display: none;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: #1E3A8A;
+        border-radius: 20px 20px 0 0;
+        z-index: 300;
+        padding: 10px 16px;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        animation: slideUp 0.22s ease-out;
+        box-shadow: 0 -8px 32px rgba(0,0,0,0.3);
+      }
+      .mobile-more-drawer.open { display: block; }
+      .mobile-more-drawer .drawer-handle {
+        width: 36px; height: 4px;
+        background: rgba(255,255,255,0.25);
+        border-radius: 2px;
+        margin: 0 auto 14px;
+      }
+      .mobile-more-drawer .drawer-title {
+        color: rgba(255,255,255,0.5);
+        font-size: 11px; font-weight: 700;
+        letter-spacing: 0.8px; text-transform: uppercase;
+        margin-bottom: 10px; padding-left: 2px;
+      }
+      .mobile-more-drawer .drawer-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .mobile-more-drawer .drawer-item {
+        display: flex; flex-direction: column;
+        align-items: center; gap: 6px;
+        padding: 14px 8px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 12px;
+        color: rgba(255,255,255,0.85);
+        font-size: 11px; font-weight: 600;
+        cursor: pointer;
+        font-family: 'Inter', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        transition: background 0.15s;
+      }
+      .mobile-more-drawer .drawer-item.active-item {
+        background: rgba(96,165,250,0.2);
+        border-color: rgba(96,165,250,0.4);
+        color: #60A5FA;
+      }
+      .mobile-more-drawer .drawer-item .d-icon { font-size: 22px; }
+      .mobile-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 250;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .mobile-overlay.open { display: block; }
+
+      /* ── 반응형 미디어 쿼리 ─────────────────────────────── */
+      @media (max-width: 768px) {
+        .mobile-bottom-nav { display: block; }
+
+        /* 메인 콘텐츠 패딩 (하단 네비 공간) */
+        .main-content-wrapper {
+          padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+          padding-left: 10px !important;
+          padding-right: 10px !important;
+          padding-top: 14px !important;
+        }
+        .main-card-wrapper {
+          padding: 14px !important;
+          border-radius: 10px !important;
+        }
+
+        /* 헤더 */
+        .header-inner-wrapper { padding: 10px 14px !important; }
+        .logo-sub-text { display: none !important; }
+        .logo-title-text { font-size: 18px !important; }
+        .logo-icon-el { font-size: 24px !important; }
+        .header-right-extras { display: none !important; }
+        .header-live-badge-el { display: none !important; }
+        .top-tab-nav-el { display: none !important; }
+
+        /* 유저 영역 */
+        .user-meta-block { display: none !important; }
+        .logout-btn-el { font-size: 10px !important; padding: 5px 8px !important; }
+
+        /* FAB */
+        .admin-fab-el {
+          bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+          right: 14px !important;
+          padding: 10px 12px !important;
+        }
+        .fab-label-el { display: none !important; }
+        .fab-icon-el { font-size: 22px !important; }
+
+        /* 푸터 */
+        .footer-bar-el { display: none !important; }
+        .footer-copyright-el {
+          padding: 8px 12px !important;
+          font-size: 10px !important;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .header-inner-wrapper { padding: 8px 10px !important; }
+        .main-content-wrapper { padding-left: 8px !important; padding-right: 8px !important; }
+        .main-card-wrapper { padding: 10px !important; }
+      }
+
+      /* ── 컴포넌트별 모바일 오버라이드 ────────────────────── */
+
+      /* ChatBot — 고정 높이 해제, 뷰포트 기반 높이 */
+      @media (max-width: 768px) {
+        /* ChatBot 컨테이너: 뷰포트 높이에서 헤더+하단바 빼기 */
+        [data-chatbot-container],
+        .chatbot-mobile-container {
+          height: calc(100dvh - 58px - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+          max-width: 100% !important;
+          border-radius: 0 !important;
+          border-left: none !important;
+          border-right: none !important;
+        }
+
+        /* EquipmentStatus 그리드 — 모바일 2열 */
+        .eq-grid-mobile {
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 10px !important;
+        }
+        .eq-card-mobile {
+          padding: 14px 10px 12px !important;
+        }
+        .eq-icon-mobile svg {
+          width: 44px !important;
+          height: 44px !important;
+        }
+        .eq-name-mobile { font-size: 14px !important; }
+
+        /* Calendar — FullCalendar 모바일 최적화 */
+        .fc .fc-toolbar { flex-wrap: wrap !important; gap: 6px !important; }
+        .fc .fc-toolbar-title { font-size: 15px !important; }
+        .fc .fc-button { padding: 4px 8px !important; font-size: 12px !important; }
+        .fc .fc-daygrid-event { font-size: 10px !important; }
+        .fc .fc-col-header-cell-cushion { font-size: 11px !important; }
+        .fc .fc-daygrid-day-number { font-size: 11px !important; }
+
+        /* LogDashboard / AdminLog — 테이블 → 카드형 */
+        .log-table-mobile {
+          display: block !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+          font-size: 12px !important;
+        }
+        .log-table-mobile th,
+        .log-table-mobile td { padding: 6px 8px !important; }
+
+        /* ManualChatBot / DataAnalysisChatBot — ChatBot과 동일 */
+        .manual-chatbot-container,
+        .analysis-chatbot-container {
+          height: calc(100dvh - 58px - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+          max-width: 100% !important;
+          border-radius: 0 !important;
+        }
+
+        /* 공통 — 입력창 하단 safe-area */
+        .chat-input-area {
+          padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+        }
+
+        /* 터치 타겟 최소 44px */
+        button { min-height: 36px; }
+
+        /* AuthPage 카드 패딩 축소 */
+        .auth-card-mobile {
+          padding: 28px 20px !important;
+          border-radius: 16px !important;
+        }
+      }
     </style>
   </head>
   <body>

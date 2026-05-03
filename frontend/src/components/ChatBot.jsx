@@ -86,7 +86,7 @@ export default function ChatBot({ room, nickname, onBack }) {
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} data-chatbot-container="true">
       {/* 헤더 */}
       <div style={styles.header}>
         <button onClick={onBack} style={styles.backBtn}>← 방 목록</button>
