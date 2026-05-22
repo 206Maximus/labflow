@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
 
 from database import get_db
 from models import Reservation, ReservationStatus
@@ -27,7 +28,20 @@ from services.google_calendar import (
     is_connected,
     disconnect,
     sync_all_reservations,
+    get_user_events,
 )
+
+class GCalEventItem(BaseModel):
+    summary: str
+    start: datetime
+    end: datetime
+
+
+class GCalEventsResponse(BaseModel):
+    connected: bool
+    events: List[GCalEventItem]
+    count: int
+
 
 router = APIRouter(prefix="/gcal", tags=["google-calendar"])
 
@@ -132,6 +146,26 @@ def gcal_sync(db: Session = Depends(get_db)):
         message=f"동기화 완료: {result['synced']}개 생성, {result['skipped']}개 건너뜀",
     )
 
+
+
+
+@router.get("/events", response_model=GCalEventsResponse)
+def gcal_get_events(
+    days: int = Query(default=7, ge=1, le=30),
+):
+    """User Google Calendar events for the next N days (LabFlow events excluded)."""
+    if not is_connected():
+        return GCalEventsResponse(connected=False, events=[], count=0)
+
+    now = datetime.now()
+    time_max = now + timedelta(days=days)
+    events = get_user_events(time_min=now, time_max=time_max)
+
+    return GCalEventsResponse(
+        connected=True,
+        events=[GCalEventItem(**e) for e in events],
+        count=len(events),
+    )
 
 @router.post("/disconnect", response_model=GCalStatusResponse)
 def gcal_disconnect():

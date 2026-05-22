@@ -58,6 +58,21 @@ const styles = {
     fontSize: 13, fontWeight: 600, textAlign: "left",
     transition: "background 0.15s",
   },
+  excludedSection: {
+    marginTop: 10, borderTop: '1px dashed #ccc', paddingTop: 8,
+  },
+  excludedToggle: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0',
+  },
+  excludedItem: {
+    display: 'flex', alignItems: 'flex-start', gap: 6,
+    padding: '5px 8px', borderRadius: 6, marginTop: 4,
+    background: '#f5f5f5', border: '1px solid #e0e0e0',
+  },
+  excludedIcon: { fontSize: 14, flexShrink: 0, marginTop: 1 },
+  excludedText: { fontSize: 12, color: '#777', lineHeight: 1.5 },
+  excludedName: { fontWeight: 600, color: '#555' },
   quickArea: {
     padding: "0 20px 10px", display: "flex", flexWrap: "wrap", gap: 8,
   },
@@ -105,6 +120,8 @@ export default function ChatBot({ roomId }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingSlots, setPendingSlots] = useState(null);
+  const [excludedSlots, setExcludedSlots] = useState([]);
+  const [showExcluded, setShowExcluded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const bottomRef = useRef(null);
 
@@ -117,6 +134,8 @@ export default function ChatBot({ roomId }) {
     if (!msg || loading) return;
     setInput("");
     setPendingSlots(null);
+    setExcludedSlots([]);
+    setShowExcluded(false);
     setMessages((prev) => [...prev, { id: Date.now(), role: "user", content: msg }]);
     setLoading(true);
     try {
@@ -133,6 +152,8 @@ export default function ChatBot({ roomId }) {
       setMessages((prev) => [...prev, newMsg]);
       if (action === "suggest_slots" && slots && slots.length > 0) {
         setPendingSlots({ slots, data });
+        setExcludedSlots(res.data.excluded_by_gcal || []);
+        setShowExcluded(false);
       }
     } catch (err) {
       setMessages((prev) => [...prev, {
@@ -221,6 +242,33 @@ export default function ChatBot({ roomId }) {
                 </button>
               ))}
             </div>
+            {excludedSlots.length > 0 && (
+              <div style={styles.excludedSection}>
+                <button style={styles.excludedToggle} onClick={() => setShowExcluded(v => !v)}>
+                  <span>{showExcluded ? '▾' : '▸'}</span>
+                  <span>📅 개인 일정으로 제외된 시간 {excludedSlots.length}건</span>
+                </button>
+                {showExcluded && (
+                  <div style={{ marginTop: 4 }}>
+                    {excludedSlots.map((ev, i) => {
+                      const fmt = iso => new Date(iso).toLocaleString('ko-KR', {
+                        month: 'numeric', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div key={i} style={styles.excludedItem}>
+                          <span style={styles.excludedIcon}>🚫</span>
+                          <div style={styles.excludedText}>
+                            <div style={styles.excludedName}>{ev.event_name}</div>
+                            <div>{fmt(ev.start_time)} ~ {fmt(ev.end_time)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

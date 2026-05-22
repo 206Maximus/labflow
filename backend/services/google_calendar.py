@@ -17,7 +17,7 @@ import os
 import json
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -325,6 +325,80 @@ def delete_event(
     except Exception as e:
         logger.error("이벤트 삭제 실패: %s", e)
         return False
+
+
+
+def get_user_events(
+    time_min: datetime,
+    time_max: datetime,
+    calendar_id: str = "primary",
+) -> List[dict]:
+    """
+    사용자의 Google Calendar에서 지정 시간 범위 내 이벤트 조회.
+    Returns: [{"summary": str, "start": datetime, "end": datetime}, ...]
+    LabFlow가 자동 생성한 이벤트([LabFlow] 태그)는 제외.
+    """
+    try:
+        service = _get_service()
+
+        time_min_str = time_min.isoformat() + "+09:00" if not time_min.tzinfo else time_min.astimezone().isoformat()
+        time_max_str = time_max.isoformat() + "+09:00" if not time_max.tzinfo else time_max.astimezone().isoformat()
+
+        result = service.events().list(
+            calendarId=calendar_id,
+            timeMin=time_min_str,
+            timeMax=time_max_str,
+            singleEvents=True,
+            orderBy="startTime",
+        ).execute()
+
+        events = []
+        for item in result.get("items", []):
+            summary = item.get("summary", "")
+
+            # LabFlow 자동 생성 이벤트 제외
+            if summary.startswith("[LabFlow]"):
+                continue
+
+            raw_start = item.get("start", {})
+            raw_end = item.get("end", {})
+
+            if "dateTime" in raw_start:
+                start_dt = datetime.fromisoformat(raw_start["dateTime"])
+                end_dt = datetime.fromisoformat(raw_end["dateTime"])
+            elif "date" in raw_start:
+                from datetime import date as _date
+                d = _date.fromisoformat(raw_start["date"])
+                start_dt = datetime(d.year, d.month, d.day, 0, 0, 0)
+                d_end = _date.fromisoformat(raw_end["date"])
+                end_dt = datetime(d_end.year, d_end.month, d_end.day, 0, 0, 0)
+            else:
+                continue
+
+            if start_dt.tzinfo:
+                start_dt = start_dt.replace(tzinfo=None)
+            if end_dt.tzinfo:
+                end_dt = end_dt.replace(tzinfo=None)
+
+            events.append({"summary": summary, "start": start_dt, "end": end_dt})
+
+        logger.info(
+            "Google Calendar event query: %d items (%s ~ %s)",
+            len(events),
+            time_min.strftime("%m/%d %H:%M"),
+            time_max.strftime("%m/%d %H:%M"),
+        )
+        return events
+
+    except ConnectionError:
+        logger.warning("Google Calendar not connected - skipping event query")
+        return []
+    except HttpError as e:
+        logger.error("Google Calendar API error (event query): %s", e)
+        return []
+    except Exception as e:
+        logger.error("Event query failed: %s", e)
+        return []
 
 
 def sync_all_reservations(reservations: list, calendar_id: str = "primary") -> dict:

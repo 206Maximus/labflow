@@ -18,6 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import get_db
 from models import Reservation, Equipment, User, ReservationStatus, ChatRoom, ChatHistory
+from services.google_calendar import get_user_events, is_connected as gcal_connected
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -57,11 +58,18 @@ class SlotInfo(BaseModel):
     label: str
 
 
+class ExcludedSlotInfo(BaseModel):
+    start_time: str
+    end_time: str
+    event_name: str   # Google Calendar 이벤트 제목
+
+
 class ChatResponse(BaseModel):
     reply: str
     action: Optional[str] = None
     data: Optional[dict] = None
     slots: Optional[List[SlotInfo]] = None
+    excluded_by_gcal: Optional[List[ExcludedSlotInfo]] = None
 
 
 def find_available_slots(
@@ -72,13 +80,19 @@ def find_available_slots(
     max_slots: int = 3,
     work_start: int = 9,
     work_end: int = 18,
-) -> List[dict]:
+) -> dict:
+    """
+    Returns {"slots": [...], "excluded_by_gcal": [...]}
+    excluded_by_gcal: gcal 개인 일정으로 인해 제외된 시간대 목록
+    """
     now = datetime.now()
     start_day = now.replace(hour=work_start, minute=0, second=0, microsecond=0)
     if now.hour >= work_end:
         start_day += timedelta(days=1)
 
     period_end = start_day + timedelta(days=search_days)
+
+    # 1) Equipment reservation conflicts from DB
     existing = db.query(Reservation).filter(
         Reservation.equipment_id == equipment_id,
         Reservation.status != ReservationStatus.cancelled,
@@ -86,13 +100,20 @@ def find_available_slots(
         Reservation.end_time > start_day,
     ).order_by(Reservation.start_time).all()
 
+    # 2) Personal Google Calendar events (only if connected)
+    gcal_events: List[dict] = []
+    if gcal_connected():
+        gcal_events = get_user_events(time_min=start_day, time_max=period_end)
+
     slots = []
+    excluded_by_gcal: List[dict] = []
     step = timedelta(minutes=30)
     duration = timedelta(hours=duration_hours)
     cursor = max(start_day, now + timedelta(minutes=30))
 
     while cursor + duration <= period_end and len(slots) < max_slots:
         slot_end = cursor + duration
+
         if cursor.hour < work_start:
             cursor = cursor.replace(hour=work_start, minute=0, second=0)
             continue
@@ -103,11 +124,19 @@ def find_available_slots(
             cursor = (cursor + timedelta(days=1)).replace(hour=work_start, minute=0, second=0)
             continue
 
-        conflict = any(
+        # 3) Check equipment reservation conflict
+        equip_conflict = any(
             r.start_time < slot_end and r.end_time > cursor
             for r in existing
         )
-        if not conflict:
+
+        # 4) Check personal Google Calendar conflict
+        gcal_conflict = any(
+            e["start"] < slot_end and e["end"] > cursor
+            for e in gcal_events
+        )
+
+        if not equip_conflict and not gcal_conflict:
             weekday_map = ["월", "화", "수", "목", "금", "토", "일"]
             label = (
                 f"{cursor.month}월 {cursor.day}일 ({weekday_map[cursor.weekday()]}) "
@@ -120,9 +149,28 @@ def find_available_slots(
             })
             cursor = slot_end
         else:
-            cursor += step
+            # Jump cursor to end of blocking gcal event; record exclusion reason
+            if gcal_conflict:
+                blocking = [e for e in gcal_events if e["start"] < slot_end and e["end"] > cursor]
+                if blocking:
+                    # 아직 기록되지 않은 이벤트만 excluded에 추가
+                    already = {(e["start_time"], e["event_name"]) for e in excluded_by_gcal}
+                    for ev in blocking:
+                        key = (ev["start"].isoformat(), ev["summary"])
+                        if key not in already:
+                            excluded_by_gcal.append({
+                                "start_time": ev["start"].isoformat(),
+                                "end_time": ev["end"].isoformat(),
+                                "event_name": ev["summary"] or "(제목 없음)",
+                            })
+                    jump_to = max(e["end"] for e in blocking)
+                    cursor = jump_to if jump_to > cursor else cursor + step
+                else:
+                    cursor += step
+            else:
+                cursor += step
 
-    return slots
+    return {"slots": slots, "excluded_by_gcal": excluded_by_gcal}
 
 
 def build_system_prompt(db: Session) -> str:
@@ -131,11 +179,16 @@ def build_system_prompt(db: Session) -> str:
         [f"  - ID:{e.id} | {e.name} | {e.location} | {e.status}" for e in equipments]
     ) if equipments else "  - ID:1 | XRD\n  - ID:2 | SEM\n  - ID:3 | TEM"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    gcal_status = "connected (personal schedule conflict avoidance active)" if gcal_connected() else "not connected (equipment conflict check only)"
     return f"""당신은 LabFlow AI 예약 도우미입니다.
 현재 시각: {now}
+Google Calendar: {gcal_status}
 
 [장비 목록]
 {equipment_list}
+
+[슬롯 탐색]
+Google Calendar 연동 시 개인 일정(수업, 회의 등)과 장비 예약을 동시에 회피합니다.
 
 [응답 형식]
 1. 가용 슬롯 탐색 요청 시:
@@ -242,6 +295,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             action=mock.get("action"),
             data=mock.get("data"),
             slots=[SlotInfo(**s) for s in mock["slots"]] if mock.get("slots") else None,
+            excluded_by_gcal=[ExcludedSlotInfo(**e) for e in mock["excluded_by_gcal"]] if mock.get("excluded_by_gcal") else None,
         )
 
     client = get_claude_client()
