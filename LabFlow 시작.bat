@@ -3,40 +3,34 @@ title LabFlow
 set "ROOT=%~dp0"
 
 echo.
-echo  ===================================
+echo  ========================================
 echo   LabFlow  Starting...
-echo  ===================================
+echo  ========================================
 echo.
 
-REM -- Desktop shortcut
-cscript //nologo "%ROOT%create_shortcut.vbs"
-
-REM -- Install packages
-echo Installing packages...
+REM -- Activate venv and install packages
+echo [1/3] Installing backend packages...
 call "%ROOT%backend\venv\Scripts\activate.bat"
-pip install -r "%ROOT%backend\requirements.txt" -q
-pip install "bcrypt<4.0" -q
+pip install -r "%ROOT%backend\requirements.txt" -q --disable-pip-version-check
 echo Done.
 
-REM -- DB migration
-echo Running migration...
-cd /d "%ROOT%backend"
-python migrate_noshow_safety.py >nul 2>&1
-echo Done.
+REM -- Start Backend
+echo [2/3] Starting backend server...
+start "LabFlow Backend" /d "%ROOT%backend" cmd /k "venv\Scripts\activate.bat && uvicorn main:app --reload --port 8000"
+timeout /t 8 /nobreak >nul
 
-REM -- Backend
-echo Starting backend...
-start "LabFlow Backend" cmd /k "cd /d "%ROOT%backend" && venv\Scripts\activate && uvicorn main:app --reload --port 8000"
-timeout /t 5 /nobreak >nul
+REM -- Start Frontend
+echo [3/3] Starting frontend...
+start "LabFlow Frontend" /d "%ROOT%frontend" cmd /k "npm start"
+timeout /t 15 /nobreak >nul
 
-REM -- Frontend
-echo Starting frontend...
-start "LabFlow Frontend" cmd /k "cd /d "%ROOT%frontend" && npm start"
-
-REM -- Browser
-timeout /t 12 /nobreak >nul
-start "" "http://localhost:3000"
+REM -- Open browser
+start "" http://localhost:3000
 
 echo.
-echo  Ready at http://localhost:3000
+echo  ========================================
+echo   Ready!  http://localhost:3000
+echo   API  :  http://localhost:8000/docs
+echo  ========================================
+echo.
 pause

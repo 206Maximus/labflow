@@ -152,3 +152,49 @@ class EquipmentBan(Base):
 
     user = relationship("User", foreign_keys=[user_id], back_populates="equipment_bans")
     equipment = relationship("Equipment")
+
+
+# ─── RAG 매뉴얼 챗봇 관련 ────────────────────────────────────────────────────────
+
+class ManualDocument(Base):
+    """장비 매뉴얼 PDF 문서 메타데이터 테이블"""
+    __tablename__ = "manual_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    equipment_name = Column(String(100), nullable=False, index=True)  # "SEM", "XRD", "TEM" 등
+    title = Column(String(255), nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    chunk_count = Column(Integer, default=0)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    chunks = relationship("ManualChunk", back_populates="document", cascade="all, delete-orphan")
+
+
+class ManualChunk(Base):
+    """매뉴얼 PDF 청크 테이블 — 벡터 검색용 텍스트 단위"""
+    __tablename__ = "manual_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    manual_document_id = Column(Integer, ForeignKey("manual_documents.id"), nullable=False)
+    equipment_name = Column(String(100), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)           # 문서 내 순서
+    page_number = Column(Integer, nullable=True)            # PDF 페이지 번호
+    content = Column(Text, nullable=False)                  # 청크 텍스트
+    faiss_index_key = Column(Integer, nullable=True)        # FAISS 내 벡터 인덱스
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    document = relationship("ManualDocument", back_populates="chunks")
+
+
+class ManualQAHistory(Base):
+    """매뉴얼 챗봇 질문/답변 이력 테이블"""
+    __tablename__ = "manual_qa_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)   # 비로그인 허용
+    equipment_name = Column(String(100), nullable=False)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    sources_json = Column(Text, nullable=True)   # JSON: [{title, page, chunk_index}, ...]
+    created_at = Column(DateTime, default=datetime.utcnow)

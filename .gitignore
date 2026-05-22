@@ -52,3 +52,10 @@ logs/
 *.faiss
 *.index
 vector_store/
+vectorstores/
+
+# ── PDF 업로드 (민감 데이터 포함 가능) ────────
+backend/uploads/
+
+# ── 임시 파일 ────────────────────────────────
+*.tmp

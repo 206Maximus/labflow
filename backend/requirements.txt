@@ -1,23 +1,29 @@
+# ─── Core ──────────────────────────────────────────────────────────────────────
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 sqlalchemy>=2.0.30
 pydantic>=2.10.0
 python-dotenv>=1.0.1
 httpx>=0.27.0
+
+# ─── LLM (핵심 기능 1: 자연어 예약 챗봇) ───────────────────────────────────────
 anthropic>=0.28.0
 
-# Google Calendar API 연동
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.2.0
-google-auth-oauthlib>=1.2.0
+# ─── RAG (핵심 기능 2: AI 매뉴얼 챗봇) ─────────────────────────────────────────
+openai>=1.30.0          # 임베딩 생성 (RAG_MOCK_MODE=true 시 불필요)
+numpy>=1.26.0           # FAISS 폴백 + 벡터 연산
+pypdf>=4.0.0            # PDF 텍스트 추출
+# faiss-cpu>=1.8.0      # 선택 설치: pip install faiss-cpu (없으면 numpy 폴백)
 
-# 로그인 인증 (JWT + 비밀번호 해싱)
-python-jose[cryptography]>=3.3.0
+# ─── 인증 ────────────────────────────────────────────────────────────────────
 passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.9
 
-# 노쇼 자동 감지 / 안전 교육 리마인드 스케줄러
-apscheduler>=3.10.0
+# ─── 스케줄러 ─────────────────────────────────────────────────────────────────
+apscheduler>=3.10.4
 
-# PostgreSQL 사용 시에만 필요 (SQLite 개발 환경에선 생략 가능)
-# psycopg2-binary>=2.9.9
+# ─── Google Calendar API (선택) ──────────────────────────────────────────────
+google-auth>=2.29.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.130.0
