@@ -53,6 +53,33 @@ class User(Base):
     logs = relationship("UsageLog", back_populates="user")
     noshow_records = relationship("NoShowRecord", foreign_keys="NoShowRecord.user_id", back_populates="user")
     equipment_bans = relationship("EquipmentBan", foreign_keys="EquipmentBan.user_id", back_populates="user")
+    google_account = relationship("GoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    calendar_syncs = relationship("CalendarSync", back_populates="user", cascade="all, delete-orphan")
+
+
+class GoogleAccount(Base):
+    """Google OAuth credentials linked to one LabFlow user."""
+    __tablename__ = "google_accounts"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_google_accounts_user_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    google_sub = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(150), nullable=False)
+    name = Column(String(100), nullable=True)
+    picture_url = Column(String(500), nullable=True)
+    access_token_encrypted = Column(Text, nullable=True)
+    refresh_token_encrypted = Column(Text, nullable=True)
+    token_expiry = Column(DateTime, nullable=True)
+    scope = Column(Text, nullable=True)
+    token_uri = Column(String(255), default="https://oauth2.googleapis.com/token")
+    calendar_id = Column(String(255), default="primary")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="google_account")
 
 
 class Reservation(Base):
@@ -77,6 +104,23 @@ class Reservation(Base):
 
     equipment = relationship("Equipment", back_populates="reservations")
     user = relationship("User", back_populates="reservations")
+
+
+class CalendarSync(Base):
+    """Mapping from a LabFlow item to a Google Calendar event."""
+    __tablename__ = "calendar_syncs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "labflow_item_id", name="uq_calendar_sync_user_item"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    labflow_item_id = Column(String(255), nullable=False)
+    google_event_id = Column(String(255), nullable=False)
+    html_link = Column(String(1000), nullable=True)
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="calendar_syncs")
 
 
 class ChatRoom(Base):

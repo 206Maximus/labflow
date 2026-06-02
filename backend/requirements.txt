@@ -15,6 +15,7 @@ google-auth-oauthlib>=1.2.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 python-multipart>=0.0.9
+cryptography>=42.0.0
 
 # 노쇼 자동 감지 / 안전 교육 리마인드 스케줄러
 apscheduler>=3.10.0

@@ -46,6 +46,7 @@ class ChatRequest(BaseModel):
     message: str
     room_id: int
     history: Optional[List[ChatMessage]] = []
+    user_id: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
@@ -244,7 +245,12 @@ def parse_purpose(message: str) -> str:
     return "장비 사용"
 
 
-def local_reservation_action(message: str, room: ChatRoom, db: Session) -> tuple[Optional[dict], list[str]]:
+def local_reservation_action(
+    message: str,
+    room: ChatRoom,
+    db: Session,
+    user_id: Optional[int] = None,
+) -> tuple[Optional[dict], list[str]]:
     equipment_id = find_equipment_id(message)
     start_date = parse_start_date(message)
     start_time = parse_start_time(message)
@@ -263,8 +269,9 @@ def local_reservation_action(message: str, room: ChatRoom, db: Session) -> tuple
     if missing:
         return None, missing
 
-    user = db.query(User).filter(User.name == room.nickname).order_by(User.id.desc()).first()
-    user_id = user.id if user else 1
+    if user_id is None:
+        user = db.query(User).filter(User.name == room.nickname).order_by(User.id.desc()).first()
+        user_id = user.id if user else 1
     hour, minute = start_time
     start_dt = datetime.combine(start_date, datetime.min.time()).replace(hour=hour, minute=minute)
     end_dt = start_dt + duration
@@ -303,7 +310,7 @@ def handle_reservation_action(action_data: dict, clean_text: str, request: ChatR
 
         reservation = Reservation(
             equipment_id=action_data["equipment_id"],
-            user_id=action_data.get("user_id", 1),
+            user_id=request.user_id or action_data.get("user_id", 1),
             start_time=start_dt,
             end_time=end_dt,
             purpose=action_data.get("purpose", ""),
@@ -328,7 +335,12 @@ def handle_reservation_action(action_data: dict, clean_text: str, request: ChatR
 
 def handle_local_request(request: ChatRequest, room: ChatRoom, db: Session, ai_error: bool = False) -> ChatResponse:
     if "예약" in request.message:
-        action_data, missing = local_reservation_action(request.message, room, db)
+        action_data, missing = local_reservation_action(
+            request.message,
+            room,
+            db,
+            user_id=request.user_id,
+        )
         if action_data:
             start_dt = datetime.fromisoformat(action_data["start_time"])
             end_dt = datetime.fromisoformat(action_data["end_time"])

@@ -7,7 +7,7 @@ import axios from "axios";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api/v1";
 
-export default function ChatBot({ room, nickname, onBack }) {
+export default function ChatBot({ room, nickname, userId, onBack }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,6 +59,7 @@ export default function ChatBot({ room, nickname, onBack }) {
       const res = await axios.post(`${API_BASE}/chat/`, {
         room_id: room.id,
         message: trimmed,
+        user_id: userId,
       });
 
       setMessages((prev) => [

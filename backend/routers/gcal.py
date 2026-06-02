@@ -1,46 +1,71 @@
-"""
-routers/gcal.py — Google Calendar 연동 API 라우터
+"""Google Calendar routes.
 
-[엔드포인트]
-  GET  /gcal/status   — 연동 상태 확인
-  GET  /gcal/auth     — Google OAuth2 인증 URL 반환
-  GET  /gcal/callback  — OAuth2 콜백 (토큰 교환)
-  POST /gcal/sync      — 기존 예약 일괄 동기화
-  POST /gcal/disconnect — 연동 해제
+The same Google callback handles two separate flows:
+- Google login
+- Calendar connection for an already logged-in LabFlow user
 """
 
-import sys
+import logging
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from datetime import datetime, timedelta
+from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from sqlalchemy.orm import Session
 
-from database import get_db
-from models import Reservation, ReservationStatus
-from services.google_calendar import (
-    get_auth_url,
-    exchange_code,
-    is_connected,
-    disconnect,
-    sync_all_reservations,
+from auth_utils import (
+    create_access_token,
+    create_login_payload,
+    decode_access_token,
+    get_required_user,
 )
+from database import get_db
+from models import GoogleAccount, Reservation, ReservationStatus, User
+from services.google_calendar import (
+    GoogleOAuthError,
+    create_event,
+    disconnect,
+    exchange_code,
+    freebusy,
+    get_configured_redirect_uri,
+    get_auth_url,
+    get_google_account,
+    get_google_profile,
+    get_oauth_diagnostics,
+    is_connected,
+    sync_all_reservations,
+    upsert_google_user,
+)
+from services.login_tickets import issue_login_ticket
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gcal", tags=["google-calendar"])
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-# ─── 응답 스키마 ───────────────────────────────────────────────────────────────
+
+def _is_dev() -> bool:
+    return os.getenv("ENV", os.getenv("APP_ENV", "development")).lower() != "production"
+
 
 class GCalStatusResponse(BaseModel):
     connected: bool
     message: str
+    google_email: Optional[str] = None
 
 
 class GCalAuthResponse(BaseModel):
     auth_url: str
+
+
+class GCalEventLink(BaseModel):
+    created: bool
+    google_event_id: Optional[str] = None
+    html_link: Optional[str] = None
 
 
 class GCalSyncResponse(BaseModel):
@@ -48,96 +73,304 @@ class GCalSyncResponse(BaseModel):
     synced: int
     failed: int
     skipped: int
+    links: list[GCalEventLink] = []
     message: str
 
 
-# ─── 엔드포인트 ─────────────────────────────────────────────────────────────────
+class CalendarEventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    start: datetime
+    end: datetime
+    location: Optional[str] = None
+    timeZone: str = "Asia/Seoul"
+    labflowItemId: Optional[str] = None
+
+
+class CalendarEventResponse(BaseModel):
+    created: bool
+    google_event_id: Optional[str] = None
+    html_link: Optional[str] = None
+    message: str
+
+
+class FreeBusyRequest(BaseModel):
+    start: datetime
+    end: datetime
+    timeZone: str = "Asia/Seoul"
+
+
+class FreeBusyResponse(BaseModel):
+    busy: list[dict]
+
+
+def _redirect_with(params: dict) -> RedirectResponse:
+    return RedirectResponse(url=f"{FRONTEND_URL}/?{urlencode(params)}")
+
+
+def _calendar_state(user_id: int) -> str:
+    return create_access_token(
+        {"purpose": "gcal_connect", "sub": user_id},
+        expires_delta=timedelta(minutes=10),
+    )
+
+
+def _login_success_redirect(payload: dict) -> RedirectResponse:
+    ticket = issue_login_ticket(payload)
+    return _redirect_with({"google_login_ticket": ticket})
+
+
+def _login_payload(user: User, db: Session) -> dict:
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    return create_login_payload(
+        user,
+        google_connected=bool(account and account.refresh_token_encrypted),
+        picture_url=account.picture_url if account else None,
+    )
+
 
 @router.get("/status", response_model=GCalStatusResponse)
-def gcal_status():
-    """Google Calendar 연동 상태 확인"""
-    connected = is_connected()
+def gcal_status(
+    current: dict = Depends(get_required_user),
+    db: Session = Depends(get_db),
+):
+    account = get_google_account(db, current["user_id"])
+    connected = bool(account and account.refresh_token_encrypted)
     return GCalStatusResponse(
         connected=connected,
-        message="Google Calendar 연동됨" if connected else "연동되지 않음",
+        google_email=account.email if account else None,
+        message="Google Calendar is connected." if connected else "Google Calendar is not connected.",
     )
 
 
 @router.get("/auth", response_model=GCalAuthResponse)
-def gcal_auth():
-    """
-    Google OAuth2 인증 URL 반환
-    프론트에서 이 URL로 리다이렉트하면 Google 로그인 화면이 나타남
-    """
+def gcal_auth(current: dict = Depends(get_required_user)):
     try:
-        auth_url = get_auth_url()
-        return GCalAuthResponse(auth_url=auth_url)
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return GCalAuthResponse(
+            auth_url=get_auth_url(
+                state=_calendar_state(current["user_id"]),
+                redirect_uri=get_configured_redirect_uri(),
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/callback")
-def gcal_callback(code: str = Query(...), error: Optional[str] = Query(None)):
-    """
-    Google OAuth2 콜백 — Google이 인증 코드를 보내주면 토큰으로 교환
-    성공 시 프론트엔드로 리다이렉트
-    """
+def gcal_callback(
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    diagnostics = get_oauth_diagnostics()
+    logger.warning(
+        "Google OAuth callback received: code_present=%s, code_length=%s, state_present=%s, redirect_uri=%s, redirect_matches_default=%s, client_id_present=%s, client_id_hint=%s, client_secret_present=%s",
+        bool(code),
+        len(code) if code else 0,
+        bool(state),
+        diagnostics["redirect_uri"],
+        diagnostics["redirect_matches_default"],
+        diagnostics["client_id_present"],
+        diagnostics["client_id_hint"],
+        diagnostics["client_secret_present"],
+    )
+
     if error:
-        # 사용자가 권한을 거부한 경우
-        return RedirectResponse(
-            url=f"http://localhost:3000?gcal_error={error}"
+        logger.warning("Google OAuth callback returned provider error: %s", error)
+        return _redirect_with({"gcal_error": error})
+    if not code or not state:
+        logger.warning(
+            "Google OAuth callback missing parameter: code_present=%s, state_present=%s",
+            bool(code),
+            bool(state),
         )
+        return _redirect_with({"gcal_error": "missing_oauth_code_or_state"})
+
+    state_payload = decode_access_token(state)
+    if not state_payload:
+        logger.warning("Google OAuth callback state decode failed.")
+        return _redirect_with({"gcal_error": "invalid_oauth_state"})
+
+    purpose = state_payload.get("purpose")
+    logger.warning("Google OAuth callback state purpose=%s", purpose)
 
     try:
-        exchange_code(code)
-        # 성공 → 프론트엔드로 리다이렉트 (성공 플래그)
-        return RedirectResponse(
-            url="http://localhost:3000?gcal_connected=true"
+        creds = exchange_code(code, redirect_uri=get_configured_redirect_uri())
+        profile = get_google_profile(creds)
+
+        if purpose == "google_login":
+            user = upsert_google_user(db, profile, creds)
+            db.commit()
+            db.refresh(user)
+            return _login_success_redirect(_login_payload(user, db))
+
+        if purpose == "gcal_connect":
+            user_id = int(state_payload.get("sub"))
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return _redirect_with({"gcal_error": "user_not_found"})
+
+            upsert_google_user(db, profile, creds, user=user)
+            db.commit()
+            return _redirect_with({"gcal_connected": "true"})
+
+        return _redirect_with({"gcal_error": "unknown_oauth_purpose"})
+
+    except ValueError as exc:
+        db.rollback()
+        logger.warning("Google OAuth callback value error: %s", exc)
+        return _redirect_with({"gcal_error": str(exc)})
+    except GoogleOAuthError as exc:
+        db.rollback()
+        logger.warning(
+            "Google OAuth callback failed at %s: reason=%s, detail=%s",
+            exc.stage,
+            exc.reason,
+            exc.detail,
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"토큰 교환 실패: {str(e)}"
-        )
+        if exc.reason in ("invalid_client", "unauthorized_client"):
+            logger.warning(
+                "Google OAuth client mismatch hint: verify GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET belong to the same OAuth Client in Google Cloud Console."
+            )
+        return _redirect_with({
+            "gcal_error": exc.reason if _is_dev() else "google_oauth_failed",
+            "stage": exc.stage if _is_dev() else "oauth",
+        })
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Google OAuth callback unexpected failure: %s", exc)
+        return _redirect_with({
+            "gcal_error": exc.__class__.__name__ if _is_dev() else "google_oauth_failed",
+            "stage": "unexpected" if _is_dev() else "oauth",
+        })
 
 
 @router.post("/sync", response_model=GCalSyncResponse)
-def gcal_sync(db: Session = Depends(get_db)):
-    """
-    기존 예약을 Google Calendar에 일괄 동기화
-    - 취소되지 않은 모든 예약을 대상
-    - 이미 동기화된 예약(gcal_event_id 있음)은 건너뜀
-    """
-    if not is_connected():
-        raise HTTPException(
-            status_code=400,
-            detail="Google Calendar이 연동되지 않았습니다. 먼저 /gcal/auth로 인증해주세요."
+def gcal_sync(
+    current: dict = Depends(get_required_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current["user_id"]
+    if not is_connected(db, user_id):
+        raise HTTPException(status_code=403, detail="Google Calendar permission is required.")
+
+    reservations = (
+        db.query(Reservation)
+        .filter(
+            Reservation.status.in_([ReservationStatus.pending, ReservationStatus.confirmed]),
+            Reservation.end_time > Reservation.start_time,
         )
+        .all()
+    )
+    owned_count = sum(1 for reservation in reservations if reservation.user_id == user_id)
+    logger.warning(
+        "Google Calendar sync selected %s schedulable reservations for calendar_user_id=%s, owned_by_user=%s",
+        len(reservations),
+        user_id,
+        owned_count,
+    )
 
-    # 취소되지 않은 예약 조회
-    reservations = db.query(Reservation).filter(
-        Reservation.status != ReservationStatus.cancelled
-    ).all()
-
-    result = sync_all_reservations(reservations)
-
-    # gcal_event_id 업데이트 저장
+    result = sync_all_reservations(db, user_id, reservations)
     db.commit()
+
+    message = (
+        "No schedulable reservations found."
+        if not reservations
+        else (
+            f"Sync complete: {result['synced']} created, "
+            f"{result['skipped']} skipped, {result['failed']} failed."
+        )
+    )
 
     return GCalSyncResponse(
         success=True,
         synced=result["synced"],
         failed=result["failed"],
         skipped=result["skipped"],
-        message=f"동기화 완료: {result['synced']}개 생성, {result['skipped']}개 건너뜀",
+        links=[GCalEventLink(**link) for link in result.get("links", [])],
+        message=message,
     )
 
 
+@router.post("/events", response_model=CalendarEventResponse)
+def create_calendar_event(
+    data: CalendarEventCreate,
+    current: dict = Depends(get_required_user),
+    db: Session = Depends(get_db),
+):
+    if data.end <= data.start:
+        raise HTTPException(status_code=400, detail="End time must be after start time.")
+    if not is_connected(db, current["user_id"]):
+        raise HTTPException(status_code=403, detail="Google Calendar permission is required.")
+
+    try:
+        result = create_event(
+            db=db,
+            user_id=current["user_id"],
+            title=data.title,
+            description=data.description,
+            start=data.start,
+            end=data.end,
+            location=data.location,
+            time_zone=data.timeZone,
+            labflow_item_id=data.labflowItemId,
+        )
+        db.commit()
+        return CalendarEventResponse(
+            created=result["created"],
+            google_event_id=result.get("google_event_id"),
+            html_link=result.get("html_link"),
+            message=(
+                "Google Calendar event created."
+                if result["created"]
+                else "This LabFlow item is already linked to Google Calendar."
+            ),
+        )
+    except ConnectionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Google Calendar event creation failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Google Calendar event creation failed.")
+
+
+@router.post("/freebusy", response_model=FreeBusyResponse)
+def get_freebusy(
+    data: FreeBusyRequest,
+    current: dict = Depends(get_required_user),
+    db: Session = Depends(get_db),
+):
+    if data.end <= data.start:
+        raise HTTPException(status_code=400, detail="End time must be after start time.")
+    if not is_connected(db, current["user_id"]):
+        raise HTTPException(status_code=403, detail="Google Calendar permission is required.")
+
+    try:
+        return FreeBusyResponse(
+            busy=freebusy(
+                db=db,
+                user_id=current["user_id"],
+                start=data.start,
+                end=data.end,
+                time_zone=data.timeZone,
+            )
+        )
+    except ConnectionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        logger.warning("Google Calendar freebusy failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Google Calendar freebusy lookup failed.")
+
+
 @router.post("/disconnect", response_model=GCalStatusResponse)
-def gcal_disconnect():
-    """Google Calendar 연동 해제"""
-    disconnect()
+def gcal_disconnect(
+    current: dict = Depends(get_required_user),
+    db: Session = Depends(get_db),
+):
+    disconnect(db, current["user_id"])
     return GCalStatusResponse(
         connected=False,
-        message="Google Calendar 연동이 해제되었습니다.",
+        message="Google Calendar connection was removed.",
     )

@@ -1,39 +1,39 @@
-"""
-routers/auth.py — 회원가입 / 로그인 / 내 정보 API
+"""Authentication routes for LabFlow."""
 
-엔드포인트:
-  POST /api/v1/auth/register  — 회원가입 (이름, 이메일, 비밀번호)
-  POST /api/v1/auth/login     — 로그인 → JWT 토큰 반환
-  POST /api/v1/auth/login/form — OAuth2 폼 로그인 (Swagger UI 전용)
-  GET  /api/v1/auth/me        — 현재 로그인 사용자 정보
-"""
-
-import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import logging
+from datetime import datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
-from datetime import datetime
-from typing import Optional
-import logging
 
-from database import get_db
-from models import User
 from auth_utils import (
+    create_access_token,
+    create_login_payload,
+    get_required_user,
     hash_password,
     verify_password,
-    create_access_token,
-    get_required_user,
 )
+from database import get_db
+from models import GoogleAccount, User
+from services.google_calendar import (
+    GoogleOAuthError,
+    exchange_code,
+    get_configured_redirect_uri,
+    get_auth_url,
+    get_google_profile,
+    get_oauth_diagnostics,
+    upsert_google_user,
+)
+from services.login_tickets import consume_login_ticket
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-# ─── Pydantic 스키마 ────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
     name: str
@@ -54,6 +54,8 @@ class TokenResponse(BaseModel):
     email: str
     role: str
     safety_certified: bool
+    google_connected: bool = False
+    picture_url: Optional[str] = None
 
 
 class MeResponse(BaseModel):
@@ -63,33 +65,56 @@ class MeResponse(BaseModel):
     role: str
     safety_certified: bool
     safety_certified_at: Optional[datetime]
+    google_connected: bool = False
+    picture_url: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-# ─── 엔드포인트 ─────────────────────────────────────────────────────────────────
+class GoogleAuthUrlResponse(BaseModel):
+    auth_url: str
+
+
+class GoogleCodeRequest(BaseModel):
+    code: str
+    redirect_uri: Optional[str] = None
+
+
+class GoogleTicketRequest(BaseModel):
+    ticket: str
+
+
+def _google_login_state() -> str:
+    return create_access_token(
+        {"purpose": "google_login"},
+        expires_delta=timedelta(minutes=10),
+    )
+
+
+def _token_response(user: User, db: Session) -> TokenResponse:
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    return TokenResponse(**create_login_payload(
+        user,
+        google_connected=bool(account and account.refresh_token_encrypted),
+        picture_url=account.picture_url if account else None,
+    ))
+
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
-    """
-    회원가입 — 가입 즉시 JWT 토큰 반환 (바로 로그인 상태)
-    - 이메일 중복 체크
-    - 비밀번호 bcrypt 해싱
-    - 최초 가입자는 researcher 역할
-    """
     if len(data.password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="비밀번호는 6자 이상이어야 합니다."
+            detail="Password must be at least 6 characters.",
         )
 
     existing = db.query(User).filter(User.email == data.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="이미 사용 중인 이메일입니다."
+            detail="This email is already registered.",
         )
 
     user = User(
@@ -102,78 +127,140 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    logger.info("신규 회원가입: %s (%s)", user.name, user.email)
-
-    token = create_access_token({
-        "sub":   user.id,
-        "email": user.email,
-        "role":  user.role,
-    })
-
-    return TokenResponse(
-        access_token=token,
-        user_id=user.id,
-        name=user.name,
-        email=user.email,
-        role=user.role,
-        safety_certified=user.safety_certified or False,
-    )
+    logger.info("New user registered: %s (%s)", user.name, user.email)
+    return _token_response(user, db)
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
-    """JSON 바디 로그인 (React 프론트엔드용)"""
     user = db.query(User).filter(User.email == data.email).first()
 
     if not user or not user.hashed_password:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="이메일 또는 비밀번호가 올바르지 않습니다."
+            detail="Email or password is incorrect.",
         )
 
     if not verify_password(data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="이메일 또는 비밀번호가 올바르지 않습니다."
+            detail="Email or password is incorrect.",
         )
 
-    logger.info("로그인 성공: %s (%s)", user.name, user.email)
-
-    token = create_access_token({
-        "sub":   user.id,
-        "email": user.email,
-        "role":  user.role,
-    })
-
-    return TokenResponse(
-        access_token=token,
-        user_id=user.id,
-        name=user.name,
-        email=user.email,
-        role=user.role,
-        safety_certified=user.safety_certified or False,
-    )
+    logger.info("Login succeeded: %s (%s)", user.name, user.email)
+    return _token_response(user, db)
 
 
 @router.post("/login/form", response_model=TokenResponse)
 def login_form(
     form: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """OAuth2 폼 로그인 — Swagger UI /docs 에서 Authorize 버튼용"""
     return login(LoginRequest(email=form.username, password=form.password), db)
+
+
+@router.get("/google/auth-url", response_model=GoogleAuthUrlResponse)
+def google_auth_url():
+    try:
+        diagnostics = get_oauth_diagnostics()
+        logger.warning(
+            "Google login auth URL requested: redirect_uri=%s, client_id_present=%s, client_id_hint=%s, client_secret_present=%s",
+            diagnostics["redirect_uri"],
+            diagnostics["client_id_present"],
+            diagnostics["client_id_hint"],
+            diagnostics["client_secret_present"],
+        )
+        return GoogleAuthUrlResponse(
+            auth_url=get_auth_url(
+                state=_google_login_state(),
+                redirect_uri=get_configured_redirect_uri(),
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/google/start")
+def google_start():
+    try:
+        diagnostics = get_oauth_diagnostics()
+        logger.warning(
+            "Google login redirect start: redirect_uri=%s, client_id_present=%s, client_id_hint=%s, client_secret_present=%s",
+            diagnostics["redirect_uri"],
+            diagnostics["client_id_present"],
+            diagnostics["client_id_hint"],
+            diagnostics["client_secret_present"],
+        )
+        return RedirectResponse(
+            url=get_auth_url(
+                state=_google_login_state(),
+                redirect_uri=get_configured_redirect_uri(),
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/google/code", response_model=TokenResponse)
+def google_code_login(data: GoogleCodeRequest, db: Session = Depends(get_db)):
+    try:
+        redirect_uri = data.redirect_uri or get_configured_redirect_uri()
+        logger.warning(
+            "Google code login requested: code_present=%s, code_length=%s, redirect_uri=%s",
+            bool(data.code),
+            len(data.code) if data.code else 0,
+            redirect_uri,
+        )
+        creds = exchange_code(data.code, redirect_uri=redirect_uri)
+        profile = get_google_profile(creds)
+        user = upsert_google_user(db, profile, creds)
+        db.commit()
+        db.refresh(user)
+        return _token_response(user, db)
+    except ValueError as exc:
+        db.rollback()
+        logger.warning("Google code login value error: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except GoogleOAuthError as exc:
+        db.rollback()
+        logger.warning(
+            "Google code login failed at %s: reason=%s, detail=%s",
+            exc.stage,
+            exc.reason,
+            exc.detail,
+        )
+        if exc.reason in ("invalid_client", "unauthorized_client"):
+            logger.warning(
+                "Google OAuth client mismatch hint: verify GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET belong to the same OAuth Client in Google Cloud Console."
+            )
+        raise HTTPException(status_code=400, detail=f"Google OAuth failed: {exc.reason}")
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Google login failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Google login failed.")
+
+
+@router.post("/google/ticket", response_model=TokenResponse)
+def google_ticket_login(data: GoogleTicketRequest):
+    payload = consume_login_ticket(data.ticket)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google login ticket is invalid or expired.",
+        )
+    return TokenResponse(**payload)
 
 
 @router.get("/me", response_model=MeResponse)
 def get_me(
     current: dict = Depends(get_required_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """현재 로그인한 사용자 정보 반환"""
     user = db.query(User).filter(User.id == current["user_id"]).first()
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="User was not found.")
 
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
     return MeResponse(
         user_id=user.id,
         name=user.name,
@@ -181,5 +268,7 @@ def get_me(
         role=user.role,
         safety_certified=user.safety_certified or False,
         safety_certified_at=user.safety_certified_at,
+        google_connected=bool(account and account.refresh_token_encrypted),
+        picture_url=account.picture_url if account else None,
         created_at=user.created_at,
     )

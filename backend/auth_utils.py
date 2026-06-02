@@ -36,9 +36,30 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     payload = data.copy()
+    if "sub" in payload and payload["sub"] is not None:
+        payload["sub"] = str(payload["sub"])
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     payload.update({"exp": expire})
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_login_payload(user, google_connected: bool = False, picture_url: Optional[str] = None) -> dict:
+    token = create_access_token({
+        "sub": user.id,
+        "email": user.email,
+        "role": user.role,
+    })
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "safety_certified": user.safety_certified or False,
+        "google_connected": google_connected,
+        "picture_url": picture_url,
+    }
 
 
 def decode_access_token(token: str) -> Optional[dict]:
@@ -57,7 +78,10 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> Optional[int]:
     payload = decode_access_token(token)
     if not payload:
         return None
-    return payload.get("sub")
+    try:
+        return int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return None
 
 
 def get_required_user(token: str = Depends(oauth2_scheme)):
@@ -74,8 +98,16 @@ def get_required_user(token: str = Depends(oauth2_scheme)):
             detail="Token is invalid or expired.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is invalid or expired.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return {
-        "user_id": payload.get("sub"),
+        "user_id": user_id,
         "email": payload.get("email"),
         "role": payload.get("role"),
     }

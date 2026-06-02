@@ -99,6 +99,7 @@ function AppMain({ auth, logout }) {
       <ChatBot
         room={currentRoom.room}
         nickname={currentRoom.nickname}
+        userId={auth.user_id}
         onBack={() => setCurrentRoom(null)}
       />
     ) : (

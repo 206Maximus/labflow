@@ -26,7 +26,7 @@ function fmt(dt) {
 }
 
 // ── 비밀번호 게이트 ──────────────────────────────────────────────────────────────
-function PasswordGate({ onSuccess }) {
+function PasswordGate({ onSuccess, onClose }) {
   const [pw, setPw] = useState("");
   const [error, setError] = useState(false);
 
@@ -43,8 +43,16 @@ function PasswordGate({ onSuccess }) {
   };
 
   return (
-    <div style={gateStyles.overlay}>
-      <form onSubmit={handleSubmit} style={gateStyles.card}>
+    <div style={gateStyles.overlay} onClick={onClose}>
+      <form onSubmit={handleSubmit} style={gateStyles.card} onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onClose}
+          style={gateStyles.closeBtn}
+          aria-label="Close research log"
+        >
+          X
+        </button>
         <div style={gateStyles.icon}>🔐</div>
         <h2 style={gateStyles.title}>관리자 인증</h2>
         <p style={gateStyles.desc}>이 페이지는 관리자만 접근할 수 있습니다.</p>
@@ -74,6 +82,15 @@ export default function AdminLog({ onClose }) {
   useEffect(() => {
     if (authed) fetchData();
   }, [authed]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose?.();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -111,11 +128,11 @@ export default function AdminLog({ onClose }) {
       return sort.asc ? (v(a) > v(b) ? 1 : -1) : (v(a) < v(b) ? 1 : -1);
     });
 
-  if (!authed) return <PasswordGate onSuccess={() => setAuthed(true)} />;
+  if (!authed) return <PasswordGate onSuccess={() => setAuthed(true)} onClose={onClose} />;
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.panel}>
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
         {/* 헤더 */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
@@ -267,6 +284,14 @@ const gateStyles = {
     backgroundColor: "#fff", borderRadius: "16px", padding: "40px 36px",
     width: "340px", textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
     display: "flex", flexDirection: "column", gap: "14px",
+    position: "relative",
+  },
+  closeBtn: {
+    position: "absolute", top: "12px", right: "12px",
+    width: "32px", height: "32px",
+    border: "1px solid #CBD5E1", borderRadius: "8px",
+    backgroundColor: "#fff", color: "#334155",
+    cursor: "pointer", fontWeight: 800, fontSize: "14px",
   },
   icon: { fontSize: "48px" },
   title: { fontSize: "20px", fontWeight: 700, color: "#0F172A", margin: 0 },
