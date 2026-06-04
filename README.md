@@ -8,7 +8,7 @@ LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안�
 
 2026-06-02 기준으로 저장소에 반영된 주요 상태입니다.
 
-- Windows 원클릭 실행 스크립트 `LabFlow_Start.bat`가 있습니다.
+- Windows 원클릭 실행 스크립트 `LabFlow_시작.bat`가 있습니다.
 - 기본 DB는 `backend/labflow_dev.db` SQLite 파일입니다.
 - 회원가입/로그인, JWT 인증, Google 로그인, Google Calendar OAuth가 구현되어 있습니다.
 - 예약 생성 시 안전교육 인증 여부, 노쇼 장비 사용 제한, 시간대 충돌을 검사합니다.
@@ -71,8 +71,7 @@ labflow/
 │     ├─ context/AuthContext.jsx # sessionStorage 기반 로그인 상태
 │     ├─ pages/AuthPage.jsx      # 로그인/회원가입/Google 로그인
 │     └─ components/             # 장비 현황, 예약, 캘린더, 로그, 챗봇 등
-├─ LabFlow_Start.bat             # Windows 로컬 실행 스크립트
-├─ LabFlow 시작.bat              # 기존 한글 이름 실행 파일
+├─ LabFlow_시작.bat              # Windows 로컬 실행 스크립트
 ├─ LabFlow 종료.bat              # 종료 보조 스크립트
 ├─ GCal_handoff.md               # Google 연동 작업 메모
 └─ TROUBLESHOOTING_LOCAL_STARTUP.md
@@ -83,7 +82,7 @@ labflow/
 Windows에서는 저장소 루트에서 다음 파일을 실행하는 것이 가장 편합니다.
 
 ```powershell
-.\LabFlow_Start.bat
+.\LabFlow_시작.bat
 ```
 
 이 스크립트는 다음 작업을 자동으로 처리합니다.

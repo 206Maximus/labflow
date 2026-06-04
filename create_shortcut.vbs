@@ -6,7 +6,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set ws = CreateObject("WScript.Shell")
 
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-launcherPath = fso.BuildPath(scriptDir, "LabFlow_Start.bat")
+launcherPath = fso.BuildPath(scriptDir, "LabFlow_" & ChrW(&HC2DC) & ChrW(&HC791) & ".bat")
 shortcutPath = ws.SpecialFolders("Desktop") & "\LabFlow.lnk"
 
 If Not fso.FileExists(launcherPath) Then

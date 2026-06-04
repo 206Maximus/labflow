@@ -2,29 +2,26 @@
  * ChatBot.jsx — LLM 챗봇 기반 예약 UI (room_id 기반 영구 대화 기록)
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import axios from "axios";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api/v1";
 
-export default function ChatBot({ room, nickname, userId, onBack }) {
+export default function ChatBot({
+  room,
+  nickname,
+  userId,
+  onBack,
+  compact = false,
+  showHeader = true,
+}) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const bottomRef = useRef(null);
 
-  // 방 입장 시 기존 대화 기록 불러오기
-  useEffect(() => {
-    loadHistory();
-  }, [room.id]);
-
-  // 새 메시지마다 스크롤 하단으로
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
       const res = await axios.get(`${API_BASE}/rooms/${room.id}/messages`);
@@ -44,7 +41,17 @@ export default function ChatBot({ room, nickname, userId, onBack }) {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [nickname, room.id]);
+
+  // 방 입장 시 기존 대화 기록 불러오기
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  // 새 메시지마다 스크롤 하단으로
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -87,16 +94,24 @@ export default function ChatBot({ room, nickname, userId, onBack }) {
   };
 
   return (
-    <div style={styles.container} data-chatbot-container="true">
+    <div
+      style={{
+        ...styles.container,
+        ...(compact ? styles.compactContainer : {}),
+      }}
+      data-chatbot-container="true"
+    >
       {/* 헤더 */}
-      <div style={styles.header}>
-        <button onClick={onBack} style={styles.backBtn}>← 방 목록</button>
-        <div style={styles.headerCenter}>
-          <span style={styles.headerTitle}>{room.room_name}</span>
-          <span style={styles.headerSub}>👤 {nickname}</span>
+      {showHeader && (
+        <div style={styles.header}>
+          <button onClick={onBack} style={styles.backBtn}>← 방 목록</button>
+          <div style={styles.headerCenter}>
+            <span style={styles.headerTitle}>{room.room_name}</span>
+            <span style={styles.headerSub}>👤 {nickname}</span>
+          </div>
+          <div style={{ width: 72 }} /> {/* 균형용 */}
         </div>
-        <div style={{ width: 72 }} /> {/* 균형용 */}
-      </div>
+      )}
 
       {/* 메시지 영역 */}
       <div style={styles.messageArea}>
@@ -161,6 +176,14 @@ const styles = {
     border: "1px solid #dde1e7", borderRadius: "14px", overflow: "hidden",
     fontFamily: "inherit", boxShadow: "0 2px 16px rgba(0,0,0,0.08)",
     backgroundColor: "#fff",
+  },
+  compactContainer: {
+    height: "100%",
+    maxWidth: "none",
+    margin: 0,
+    border: "none",
+    borderRadius: 0,
+    boxShadow: "none",
   },
   header: {
     display: "flex", alignItems: "center", justifyContent: "space-between",

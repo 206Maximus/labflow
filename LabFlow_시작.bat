@@ -4,6 +4,13 @@ title LabFlow
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
+set "UVICORN_RELOAD=0"
+set "RUN_MIGRATION=0"
+set "BROWSER=none"
+set "PORT=3000"
+set "FRONTEND_HOST=127.0.0.1"
+set "FRONTEND_URL=http://127.0.0.1:3000"
+
 echo.
 echo  ===================================
 echo   LabFlow Starting...
@@ -38,25 +45,46 @@ if errorlevel 1 exit /b 1
 call :ensure_frontend_deps
 if errorlevel 1 exit /b 1
 
-echo Running migration...
-pushd "%ROOT%\backend"
-"%ROOT%\backend\venv\Scripts\python.exe" migrate_noshow_safety.py >nul 2>&1
-popd
-echo Done.
+if "%RUN_MIGRATION%"=="1" (
+    echo Running migration...
+    pushd "%ROOT%\backend"
+    "%ROOT%\backend\venv\Scripts\python.exe" migrate_noshow_safety.py >nul 2>&1
+    if errorlevel 1 (
+        popd
+        echo [ERROR] Migration failed.
+        echo.
+        pause
+        exit /b 1
+    )
+    popd
+    echo Done.
+) else (
+    echo Skipping migration. Set RUN_MIGRATION=1 to run it.
+)
+
+if "%UVICORN_RELOAD%"=="1" (
+    set "UVICORN_ARGS=--reload --port 8000"
+) else (
+    set "UVICORN_ARGS=--port 8000"
+)
 
 echo Starting backend...
-start "LabFlow Backend" cmd /k "cd /d ""%ROOT%\backend"" && ""%ROOT%\backend\venv\Scripts\python.exe"" -m uvicorn main:app --reload --port 8000"
+start "LabFlow Backend" cmd /k "cd /d ""%ROOT%\backend"" && ""%ROOT%\backend\venv\Scripts\python.exe"" -m uvicorn main:app %UVICORN_ARGS%"
 timeout /t 5 /nobreak >nul
 
 echo Starting frontend...
-start "LabFlow Frontend" cmd /k "cd /d ""%ROOT%\frontend"" && %NPM_CMD% start"
+start "LabFlow Frontend" cmd /k "cd /d ""%ROOT%\frontend"" && set ""BROWSER=none"" && set ""PORT=3000"" && call npm.cmd start"
 
 echo Waiting for frontend...
 call :wait_for_frontend
-start "" "http://localhost:3000"
+if errorlevel 1 (
+    echo [WARN] Frontend did not respond within 60 seconds.
+    echo Opening browser anyway. Refresh the page after the frontend finishes compiling.
+)
+start "" "%FRONTEND_URL%"
 
 echo.
-echo Ready at http://localhost:3000
+echo Ready at %FRONTEND_URL%
 pause
 exit /b 0
 
@@ -137,7 +165,7 @@ popd
 
 :backend_venv_ready
 echo Checking backend packages...
-"%ROOT%\backend\venv\Scripts\python.exe" -c "import fastapi, sqlalchemy, uvicorn, passlib, bcrypt" >nul 2>&1
+"%ROOT%\backend\venv\Scripts\python.exe" -c "import fastapi, sqlalchemy, uvicorn, passlib, jose, apscheduler, anthropic" >nul 2>&1
 if not errorlevel 1 goto backend_packages_ready
 
 echo Installing backend packages...
@@ -158,7 +186,7 @@ if exist "%ROOT%\frontend\node_modules\.bin\react-scripts.cmd" exit /b 0
 
 echo Installing frontend packages...
 pushd "%ROOT%\frontend"
-call %NPM_CMD% install --no-audit --no-fund
+call "%NPM_CMD%" install --no-audit --no-fund
 if errorlevel 1 (
     popd
     echo [ERROR] Failed to install frontend packages.
@@ -172,9 +200,8 @@ exit /b 0
 
 :wait_for_frontend
 for /l %%I in (1,1,60) do (
-    powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3000' -TimeoutSec 1 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+    "%ROOT%\backend\venv\Scripts\python.exe" -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('%FRONTEND_HOST%', 3000)); s.close()" >nul 2>&1
     if not errorlevel 1 exit /b 0
     timeout /t 1 /nobreak >nul
 )
-echo [WARN] Frontend did not respond within 60 seconds. Opening browser anyway.
-exit /b 0
+exit /b 1

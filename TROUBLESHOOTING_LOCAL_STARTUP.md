@@ -86,9 +86,9 @@ frontend\node_modules\.bin\react-scripts.cmd
 
 이번에 적용한 수정은 다음 방향을 목표로 했습니다.
 
-- 실행 파일명을 한글 인코딩에 의존하지 않도록 `LabFlow_Start.bat`를 추가했습니다.
-- 기존 `LabFlow 시작.bat`는 새 런처를 호출하도록 단순화했습니다.
-- `create_shortcut.vbs`가 깨진 한글 파일명이 아니라 `LabFlow_Start.bat`를 가리키게 했습니다.
+- 사용자용 실행 파일을 `LabFlow_시작.bat`로 정리했습니다.
+- 기존 `LabFlow_Start.bat`와 `LabFlow 시작.bat`는 제거했습니다.
+- `create_shortcut.vbs`가 `LabFlow_시작.bat`를 가리키게 했습니다.
 - Python을 `python` 명령뿐 아니라 `C:\anaconda3\python.exe`에서도 찾도록 했습니다.
 - npm을 `C:\anaconda3\npm.cmd`에서도 찾도록 했습니다.
 - npm 실행 시 `C:\anaconda3`를 PATH에 추가해 postinstall 스크립트의 `node` 호출이 실패하지 않도록 했습니다.
