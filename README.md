@@ -6,7 +6,7 @@ LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안�
 
 ## 현재 스냅샷
 
-마지막 확인: 2026-06-04, `gijun` 브랜치, 로컬 경로 `C:\labflow_UI`.
+마지막 확인: 2026-06-05, `gijun` 브랜치, 로컬 경로 `C:\labflow_UI`.
 
 - 원격 저장소: `https://github.com/206Maximus/labflow.git`
 - 프론트엔드: React 18, Create React App, FullCalendar, Axios
@@ -14,7 +14,7 @@ LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안�
 - DB: 기본 SQLite `backend/labflow_dev.db`, PostgreSQL은 선택 설정
 - 로컬 실행 진입점: `LabFlow_시작.bat`
 - 기본 접속 주소: frontend `http://127.0.0.1:3000`, backend `http://localhost:8000`
-- 현재 첫 화면: 로그인 후 `CommandCenter`가 기본 화면
+- 현재 첫 화면: 로그인 후 `CommandCenter`가 기본 화면. Home은 프롬프트 제출 후 채팅방 레이아웃으로 전환됨
 - 이전 README와 여러 한글 주석/문자열은 인코딩이 깨진 상태였고, 이 README만 새로 UTF-8로 정리함
 
 ## 현재 구현 범위
@@ -22,30 +22,31 @@ LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안�
 | 영역 | 상태 |
 | --- | --- |
 | 인증 | 이메일/비밀번호 회원가입, 로그인, JWT, Google 로그인 티켓 흐름 |
-| 메인 UI | `CommandCenter`가 첫 화면. 사이드바 메뉴로 장비 현황, 캘린더, 체크인/아웃, 사용 로그 접근 |
+| 메인 UI | `CommandCenter`가 첫 화면. 사이드바 메뉴와 하단 대화 기록, 우측 캘린더 도크 포함 |
 | 예약 API | 생성, 조회, 수정, 삭제, 체크인, 체크아웃 |
 | 예약 검증 | 일반 예약 API는 시간 충돌, 안전교육 인증, 노쇼 장비 ban을 검사 |
-| 채팅 예약 | `/api/v1/chat/`에서 예약 생성, 목록 조회, 수정, 취소 액션 처리 |
+| 채팅 예약 | `/api/v1/chat/`에서 예약 생성, 목록 조회, 수정, 취소 액션 처리. Home 채팅에서는 예약 검토/완료 카드가 assistant 메시지 안에 표시됨 |
 | Google Calendar | OAuth, 연결 상태, sync, event create/update/delete, freebusy, disconnect |
 | 안전교육 | 사용자별 인증/해제, 상태 조회, 리마인더 대상 조회 |
 | 노쇼 | 자동 감지, 노쇼 누적, 장비별 ban, 활성 ban 조회 |
 | 로그 | 장비 사용 로그 생성/조회, 장비별 요약 |
 | 스케줄러 | FastAPI lifespan에서 노쇼 체크 1분 간격, 안전교육 리마인더 점검 1일 간격 |
+| 캘린더 UI | 메인 FullCalendar는 09:00-18:00 주/일 시간대를 표시. 우측 도크는 LabFlow 예약 미니 캘린더와 Google freebusy 기반 미니 캘린더를 함께 표시 |
 | 데모/보류 UI | ManualChatBot, DataAnalysisChatBot, FileSync, RoomList, AdminLog 등은 남아 있으나 현재 메인 흐름에서는 대부분 숨겨져 있음 |
 
 ## 가장 중요한 주의점
 
-1. 한글 문자열 인코딩 복구가 필요합니다.
-   - `README.md`는 복구했지만 `frontend/src/App.jsx`, `frontend/src/components/CommandCenter.jsx`, `backend/routers/chat.py`, 일부 docs와 주석의 한글은 깨진 문자열이 남아 있습니다.
-   - 빌드는 통과하지만 실제 UI 문구와 한국어 채팅 fallback 매칭 품질은 좋지 않을 수 있습니다.
+1. 한글 문자열 인코딩 이력에 주의하세요.
+   - 현재 주요 UI 파일은 UTF-8 기준으로 읽히지만, 과거 handoff/docs와 일부 주석에는 깨진 문자열이 섞여 있을 수 있습니다.
+   - 문자열을 고칠 때는 PowerShell 출력 인코딩이 아니라 파일 자체를 UTF-8로 확인하세요.
 
 2. 채팅 예약 생성은 일반 예약 API 검증을 완전히 공유하지 않습니다.
    - `backend/routers/reservation.py`의 `create_reservation()`은 안전교육 인증과 노쇼 ban을 검사합니다.
    - `backend/routers/chat.py`의 `handle_reservation_action()`은 직접 `Reservation`을 생성하며 현재 시간 충돌 중심으로 처리합니다.
    - 다음 작업에서는 예약 생성/수정 검증을 공용 service 함수로 빼서 API와 chat이 같은 경로를 타게 하는 것이 안전합니다.
 
-3. `CommandCenter`의 오른쪽 캘린더 패널에는 정적 데모 데이터가 섞여 있습니다.
-   - 실제 예약/Google freebusy를 전부 반영하는 완성형 캘린더는 아닙니다.
+3. `CommandCenter`의 예약 검토 카드는 프론트 파서와 백엔드 채팅 액션이 함께 동작합니다.
+   - 예: `7월 3일 오후 2시부터 2시간동안 SEM 예약해줘`는 검토 카드에서 `7월 3일 14:00 - 16:00`으로 표시하고, 확인 시 같은 시간 정보를 백엔드 채팅 요청에 전달합니다.
 
 4. `ANTHROPIC_API_KEY`는 선택입니다.
    - 키가 있으면 Claude를 사용합니다.
@@ -104,7 +105,7 @@ C:\anaconda3\npm.cmd start
 
 ## 검증 결과
 
-2026-06-04에 확인한 결과:
+2026-06-05에 확인한 결과:
 
 ```powershell
 $env:PATH='C:\anaconda3;' + $env:PATH

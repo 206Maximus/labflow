@@ -1,0 +1,144 @@
+.labflow-calendar-page {
+  --labflow-navy: #1e3a8a;
+  --labflow-blue: #2563eb;
+  --labflow-line: #dbeafe;
+  --labflow-soft: #f8fbff;
+}
+
+.labflow-calendar-shell {
+  padding: 16px;
+  border: 1px solid var(--labflow-line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+}
+
+.labflow-calendar-shell .fc {
+  color: #0f172a;
+  font-family: inherit;
+}
+
+.labflow-calendar-shell .fc .fc-toolbar {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.labflow-calendar-shell .fc .fc-toolbar-title {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.labflow-calendar-shell .fc .fc-button {
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--labflow-navy);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: none;
+}
+
+.labflow-calendar-shell .fc .fc-button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: var(--labflow-navy);
+}
+
+.labflow-calendar-shell .fc .fc-button:focus,
+.labflow-calendar-shell .fc .fc-button:active {
+  box-shadow: none;
+}
+
+.labflow-calendar-shell .fc .fc-button-primary:not(:disabled).fc-button-active,
+.labflow-calendar-shell .fc .fc-button-primary:not(:disabled):active {
+  border-color: var(--labflow-navy);
+  background: var(--labflow-navy);
+  color: #ffffff;
+}
+
+.labflow-calendar-shell .fc-theme-standard .fc-scrollgrid,
+.labflow-calendar-shell .fc-theme-standard td,
+.labflow-calendar-shell .fc-theme-standard th {
+  border-color: #e2e8f0;
+}
+
+.labflow-calendar-shell .fc-scrollgrid {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.labflow-calendar-shell .fc-col-header-cell {
+  background: #f8fafc;
+}
+
+.labflow-calendar-shell .fc-col-header-cell-cushion {
+  padding: 10px 4px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.labflow-calendar-shell .fc-timegrid-axis,
+.labflow-calendar-shell .fc-timegrid-slot-label {
+  background: #fbfdff;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.labflow-calendar-shell .fc-timegrid-slot {
+  height: 36px;
+}
+
+.labflow-calendar-shell .fc-timegrid-slot-minor {
+  border-top-style: dashed;
+}
+
+.labflow-calendar-shell .fc .fc-day-today {
+  background: #eff6ff;
+}
+
+.labflow-calendar-shell .fc-timegrid-now-indicator-line {
+  border-color: #ef4444;
+}
+
+.labflow-calendar-shell .fc-timegrid-now-indicator-arrow {
+  border-color: #ef4444;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.labflow-calendar-shell .fc-event {
+  border-width: 1px;
+  border-radius: 7px;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.12);
+}
+
+.labflow-calendar-shell .fc-event-main {
+  color: inherit;
+}
+
+.labflow-calendar-event {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .labflow-calendar-shell {
+    padding: 10px;
+  }
+
+  .labflow-calendar-shell .fc .fc-toolbar {
+    align-items: stretch;
+  }
+
+  .labflow-calendar-shell .fc .fc-toolbar-title {
+    font-size: 17px;
+  }
+}

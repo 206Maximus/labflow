@@ -5,6 +5,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
+import "./Calendar.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api/v1";
 
@@ -219,7 +220,7 @@ export default function Calendar() {
   const activeFilter = EQUIPMENT_FILTERS.find((filter) => filter.id === selectedEquip);
 
   return (
-    <div style={styles.container}>
+    <div className="labflow-calendar-page" style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>
           {selectedEquip === null ? "All equipment" : activeFilter?.label} reservations
@@ -310,35 +311,37 @@ export default function Calendar() {
         ))}
       </div>
 
-      <FullCalendar
-        key={selectedEquip}
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="timeGridWeek"
-        headerToolbar={{
-          left: "prev,next today",
-          center: "title",
-          right: "dayGridMonth,timeGridWeek,timeGridDay",
-        }}
-        locale="ko"
-        events={filteredEvents}
-        eventClick={(info) => setSelectedEvent(info.event)}
-        eventContent={(eventInfo) => {
-          const status = eventInfo.event.extendedProps.statusStyle;
-          const equipName = eventInfo.event.extendedProps.equipName;
-          const purpose = eventInfo.event.extendedProps.purpose || "Reservation";
-          return (
-            <div style={styles.eventInner}>
-              {selectedEquip === null && <span style={styles.eventChip}>{equipName}</span>}
-              <span>{purpose}</span>
-              <span style={styles.eventStatus}>{status.label}</span>
-            </div>
-          );
-        }}
-        slotMinTime="07:00:00"
-        slotMaxTime="22:00:00"
-        height="auto"
-        businessHours={{ daysOfWeek: [1, 2, 3, 4, 5], startTime: "09:00", endTime: "18:00" }}
-      />
+      <div className="labflow-calendar-shell">
+        <FullCalendar
+          key={selectedEquip}
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          initialView="timeGridWeek"
+          headerToolbar={{
+            left: "prev,next today",
+            center: "title",
+            right: "dayGridMonth,timeGridWeek,timeGridDay",
+          }}
+          locale="ko"
+          events={filteredEvents}
+          eventClick={(info) => setSelectedEvent(info.event)}
+          eventContent={(eventInfo) => {
+            const status = eventInfo.event.extendedProps.statusStyle;
+            const equipName = eventInfo.event.extendedProps.equipName;
+            const purpose = eventInfo.event.extendedProps.purpose || "Reservation";
+            return (
+              <div className="labflow-calendar-event" style={styles.eventInner}>
+                {selectedEquip === null && <span style={styles.eventChip}>{equipName}</span>}
+                <span>{purpose}</span>
+                <span style={styles.eventStatus}>{status.label}</span>
+              </div>
+            );
+          }}
+          slotMinTime="09:00:00"
+          slotMaxTime="18:00:00"
+          height="auto"
+          businessHours={{ daysOfWeek: [1, 2, 3, 4, 5], startTime: "09:00", endTime: "18:00" }}
+        />
+      </div>
 
       {selectedEvent && modalData && (
         <div style={styles.modalOverlay} onClick={() => setSelectedEvent(null)}>
