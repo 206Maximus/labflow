@@ -1,138 +1,132 @@
 # LabFlow
 
-LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안전교육 인증, 노쇼 관리, AI 예약 챗봇, Google Calendar 연동을 한 화면에서 다루는 연구실 장비 관리 플랫폼입니다.
+LabFlow는 연구실 장비 예약, 체크인/체크아웃, 사용 로그, 안전교육 인증, 노쇼 제한, AI 예약 채팅, Google Calendar 연동을 한 화면에서 다루기 위한 로컬 개발용 웹 애플리케이션입니다.
 
-현재 구현은 **React 프론트엔드 + FastAPI 백엔드 + SQLite 개발 DB**를 기준으로 로컬 실행에 맞춰져 있습니다. PostgreSQL은 선택 설정으로 남아 있고, S3/RAG/데이터 분석 백엔드 연동은 아직 데모 또는 예정 기능입니다.
+이 README는 GPT/Codex/다음 작업자가 프로젝트를 가장 먼저 읽고 현재 상황을 파악하도록 만든 인수인계 문서입니다. 배포용 홍보 문서보다 "지금 무엇이 구현되어 있고, 어디가 위험하며, 다음에 무엇을 봐야 하는지"를 우선합니다.
 
-## 현재 상태
+## 현재 스냅샷
 
-2026-06-02 기준으로 저장소에 반영된 주요 상태입니다.
+마지막 확인: 2026-06-04, `gijun` 브랜치, 로컬 경로 `C:\labflow_UI`.
 
-- Windows 원클릭 실행 스크립트 `LabFlow_시작.bat`가 있습니다.
-- 기본 DB는 `backend/labflow_dev.db` SQLite 파일입니다.
-- 회원가입/로그인, JWT 인증, Google 로그인, Google Calendar OAuth가 구현되어 있습니다.
-- 예약 생성 시 안전교육 인증 여부, 노쇼 장비 사용 제한, 시간대 충돌을 검사합니다.
-- 예약 생성/수정/삭제, 체크인/체크아웃 시 Google Calendar가 연결된 사용자라면 일정 동기화를 시도합니다.
-- 노쇼 자동 감지와 안전교육 리마인더 점검은 APScheduler로 백그라운드에서 실행됩니다.
-- 예약 챗봇은 `ANTHROPIC_API_KEY`가 있으면 Claude를 사용하고, 키가 없으면 간단한 로컬 예약 파싱 fallback으로 동작합니다.
-- 매뉴얼 챗봇, 데이터 분석 챗봇, 파일 동기화 화면은 현재 프론트엔드 데모 UI 성격이 강합니다.
+- 원격 저장소: `https://github.com/206Maximus/labflow.git`
+- 프론트엔드: React 18, Create React App, FullCalendar, Axios
+- 백엔드: FastAPI, SQLAlchemy 2, Pydantic 2, APScheduler
+- DB: 기본 SQLite `backend/labflow_dev.db`, PostgreSQL은 선택 설정
+- 로컬 실행 진입점: `LabFlow_시작.bat`
+- 기본 접속 주소: frontend `http://127.0.0.1:3000`, backend `http://localhost:8000`
+- 현재 첫 화면: 로그인 후 `CommandCenter`가 기본 화면
+- 이전 README와 여러 한글 주석/문자열은 인코딩이 깨진 상태였고, 이 README만 새로 UTF-8로 정리함
 
-## 주요 기능
+## 현재 구현 범위
 
-| 영역 | 구현 내용 |
+| 영역 | 상태 |
 | --- | --- |
-| 인증 | 이메일/비밀번호 회원가입, 로그인, JWT, Google 로그인 |
-| 장비/예약 | 장비별 예약, 캘린더 조회, 예약 상태 변경, 체크인/체크아웃 |
-| 안전교육 | 사용자별 안전교육 인증 상태, 관리자 인증/해제, 리마인더 대상 조회 |
-| 노쇼 | 미체크인 예약 자동 감지, 장비별 사용 제한, 노쇼 상태 조회 |
-| 로그 | 장비 사용 로그, 예약/사용 이력 대시보드 |
-| 챗봇 | 채팅방 기반 예약 챗봇, Claude API optional, 로컬 fallback |
-| Google Calendar | Google OAuth, 예약 일정 동기화, freebusy 조회, 연결 해제 |
-| 데모 UI | 매뉴얼 챗봇, 데이터 분석 챗봇, 파일 동기화 화면 |
+| 인증 | 이메일/비밀번호 회원가입, 로그인, JWT, Google 로그인 티켓 흐름 |
+| 메인 UI | `CommandCenter`가 첫 화면. 사이드바 메뉴로 장비 현황, 캘린더, 체크인/아웃, 사용 로그 접근 |
+| 예약 API | 생성, 조회, 수정, 삭제, 체크인, 체크아웃 |
+| 예약 검증 | 일반 예약 API는 시간 충돌, 안전교육 인증, 노쇼 장비 ban을 검사 |
+| 채팅 예약 | `/api/v1/chat/`에서 예약 생성, 목록 조회, 수정, 취소 액션 처리 |
+| Google Calendar | OAuth, 연결 상태, sync, event create/update/delete, freebusy, disconnect |
+| 안전교육 | 사용자별 인증/해제, 상태 조회, 리마인더 대상 조회 |
+| 노쇼 | 자동 감지, 노쇼 누적, 장비별 ban, 활성 ban 조회 |
+| 로그 | 장비 사용 로그 생성/조회, 장비별 요약 |
+| 스케줄러 | FastAPI lifespan에서 노쇼 체크 1분 간격, 안전교육 리마인더 점검 1일 간격 |
+| 데모/보류 UI | ManualChatBot, DataAnalysisChatBot, FileSync, RoomList, AdminLog 등은 남아 있으나 현재 메인 흐름에서는 대부분 숨겨져 있음 |
 
-## 기술 스택
+## 가장 중요한 주의점
 
-| 영역 | 기술 |
-| --- | --- |
-| Frontend | React 18, React Scripts, FullCalendar, Axios |
-| Backend | FastAPI, SQLAlchemy 2, Pydantic 2, Uvicorn |
-| Database | SQLite 기본, PostgreSQL 선택 |
-| Auth | JWT, passlib, python-jose, Google OAuth |
-| Scheduler | APScheduler |
-| AI | Anthropic Claude API optional |
-| Calendar | Google Calendar API |
+1. 한글 문자열 인코딩 복구가 필요합니다.
+   - `README.md`는 복구했지만 `frontend/src/App.jsx`, `frontend/src/components/CommandCenter.jsx`, `backend/routers/chat.py`, 일부 docs와 주석의 한글은 깨진 문자열이 남아 있습니다.
+   - 빌드는 통과하지만 실제 UI 문구와 한국어 채팅 fallback 매칭 품질은 좋지 않을 수 있습니다.
 
-## 프로젝트 구조
+2. 채팅 예약 생성은 일반 예약 API 검증을 완전히 공유하지 않습니다.
+   - `backend/routers/reservation.py`의 `create_reservation()`은 안전교육 인증과 노쇼 ban을 검사합니다.
+   - `backend/routers/chat.py`의 `handle_reservation_action()`은 직접 `Reservation`을 생성하며 현재 시간 충돌 중심으로 처리합니다.
+   - 다음 작업에서는 예약 생성/수정 검증을 공용 service 함수로 빼서 API와 chat이 같은 경로를 타게 하는 것이 안전합니다.
 
-```text
-labflow/
-├─ backend/
-│  ├─ main.py                    # FastAPI 앱 진입점, router 등록, scheduler 시작
-│  ├─ database.py                # SQLite/PostgreSQL 연결 설정
-│  ├─ models.py                  # SQLAlchemy 모델
-│  ├─ auth_utils.py              # JWT, 비밀번호 해시, 현재 사용자 인증
-│  ├─ migrate_noshow_safety.py   # 로컬 DB 마이그레이션 보조 스크립트
-│  ├─ routers/
-│  │  ├─ auth.py                 # 회원가입/로그인/Google 로그인
-│  │  ├─ reservation.py          # 예약, 체크인/체크아웃
-│  │  ├─ logs.py                 # 사용 로그
-│  │  ├─ rooms.py                # 채팅방
-│  │  ├─ chat.py                 # 예약 챗봇
-│  │  ├─ safety.py               # 안전교육 인증
-│  │  ├─ noshow.py               # 노쇼/장비 사용 제한
-│  │  └─ gcal.py                 # Google Calendar 연동
-│  └─ services/
-│     ├─ google_calendar.py      # OAuth, token 암호화, 일정 CRUD/sync
-│     └─ login_tickets.py        # Google redirect 후 임시 로그인 ticket
-├─ frontend/
-│  ├─ public/
-│  └─ src/
-│     ├─ App.jsx                 # 전체 화면/탭 구성
-│     ├─ context/AuthContext.jsx # sessionStorage 기반 로그인 상태
-│     ├─ pages/AuthPage.jsx      # 로그인/회원가입/Google 로그인
-│     └─ components/             # 장비 현황, 예약, 캘린더, 로그, 챗봇 등
-├─ LabFlow_시작.bat              # Windows 로컬 실행 스크립트
-├─ LabFlow 종료.bat              # 종료 보조 스크립트
-├─ GCal_handoff.md               # Google 연동 작업 메모
-└─ TROUBLESHOOTING_LOCAL_STARTUP.md
-```
+3. `CommandCenter`의 오른쪽 캘린더 패널에는 정적 데모 데이터가 섞여 있습니다.
+   - 실제 예약/Google freebusy를 전부 반영하는 완성형 캘린더는 아닙니다.
 
-## 빠른 실행
+4. `ANTHROPIC_API_KEY`는 선택입니다.
+   - 키가 있으면 Claude를 사용합니다.
+   - 없으면 로컬 fallback이 동작하지만 자연어 이해 범위가 좁고, 현재 깨진 한글 문자열의 영향을 받습니다.
 
-Windows에서는 저장소 루트에서 다음 파일을 실행하는 것이 가장 편합니다.
+5. 자동 테스트는 거의 없습니다.
+   - 현재 확인은 frontend build와 backend compile 중심입니다.
+   - API 단위 테스트, 채팅 액션 테스트, Google Calendar mock 테스트는 추가 필요합니다.
+
+## 실행 방법
+
+Windows에서는 루트에서 이 파일을 실행하는 것이 기본입니다.
 
 ```powershell
 .\LabFlow_시작.bat
 ```
 
-이 스크립트는 다음 작업을 자동으로 처리합니다.
+이 스크립트가 하는 일:
 
-- Python과 npm 위치 확인
+- `create_shortcut.vbs`로 바탕화면 바로가기 생성 시도
+- Python 3과 npm 탐색, `C:\anaconda3` 경로도 후보로 사용
 - `backend/venv`가 없으면 생성
-- 백엔드 패키지 설치
-- 프론트엔드 패키지 설치
-- 노쇼/안전교육 마이그레이션 실행
-- FastAPI 백엔드 실행
-- React 개발 서버 실행
-- `http://localhost:3000` 브라우저 열기
+- 백엔드 패키지가 부족하면 `backend/requirements.txt` 설치
+- `frontend/node_modules/.bin/react-scripts.cmd`가 없으면 `npm install --no-audit --no-fund`
+- `RUN_MIGRATION=0` 기본값으로 migration은 건너뜀
+- `UVICORN_RELOAD=0` 기본값으로 backend reload 없이 실행
+- `BROWSER=none`, `PORT=3000`으로 React 자동 브라우저 열기를 막음
+- frontend가 응답할 때까지 기다린 뒤 `http://127.0.0.1:3000`을 한 번만 엶
 
-실행 후 접속 주소는 다음과 같습니다.
+종료는 루트에서 다음 파일을 사용합니다.
 
-| 서비스 | 주소 |
-| --- | --- |
-| Frontend | http://localhost:3000 |
-| Backend API | http://localhost:8000 |
-| Swagger | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
+```powershell
+.\LabFlow 종료.bat
+```
 
 ## 수동 실행
 
-### 1. 백엔드
+백엔드:
 
 ```powershell
-cd backend
-py -3 -m venv venv
-.\venv\Scripts\python.exe -m pip install --upgrade pip
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe migrate_noshow_safety.py
-.\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+cd C:\labflow_UI\backend
+.\venv\Scripts\python.exe -m uvicorn main:app --port 8000
 ```
 
-`Base.metadata.create_all()`이 서버 시작 시 테이블을 자동 생성합니다. 기존 로컬 DB를 계속 쓰는 경우에는 `migrate_noshow_safety.py`를 한 번 실행해 주세요.
-
-### 2. 프론트엔드
-
-다른 터미널에서 실행합니다.
+프론트엔드:
 
 ```powershell
-cd frontend
-npm install
-npm start
+cd C:\labflow_UI\frontend
+$env:PATH='C:\anaconda3;' + $env:PATH
+$env:BROWSER='none'
+$env:PORT='3000'
+C:\anaconda3\npm.cmd start
 ```
+
+직접 `npm`을 실행할 때 `node`를 못 찾는다면 `C:\anaconda3`를 PATH 앞에 붙여야 합니다. `C:\anaconda3\npm.cmd` 자체는 있어도 내부에서 호출되는 `node`가 PATH에 없으면 실패합니다.
+
+## 검증 결과
+
+2026-06-04에 확인한 결과:
+
+```powershell
+$env:PATH='C:\anaconda3;' + $env:PATH
+C:\anaconda3\npm.cmd run build
+```
+
+결과: 성공. 경고 2개가 남아 있습니다.
+
+- `frontend/src/components/EquipmentStatus.jsx`: `now` 미사용
+- `frontend/src/components/LogDashboard.jsx`: `useEffect` dependency에 `fetchLogs` 누락
+
+백엔드 컴파일 확인:
+
+```powershell
+backend\venv\Scripts\python.exe -m compileall -q backend\main.py backend\database.py backend\auth_utils.py backend\models.py backend\migrate_add_gcal.py backend\migrate_noshow_safety.py backend\routers backend\services
+```
+
+결과: 성공.
 
 ## 환경 변수
 
-프로젝트 루트의 `.env` 또는 백엔드 실행 환경에 필요한 값을 넣습니다. 로컬 기본 실행은 대부분 비워도 되지만, Claude와 Google 연동은 별도 설정이 필요합니다.
+루트 `.env` 또는 백엔드 실행 환경에 둘 수 있습니다. 로컬 기본 실행은 대부분 비워도 되지만 Google/Claude는 별도 설정이 필요합니다.
 
 ```env
 # Database
@@ -158,24 +152,119 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/gcal/callback
 TOKEN_ENCRYPTION_KEY=
 ```
 
-프론트엔드 API 주소를 바꾸고 싶으면 `frontend/.env`에 다음 값을 둘 수 있습니다.
+프론트엔드 API 주소를 바꾸려면 `frontend/.env`에 다음 값을 둡니다.
 
 ```env
 REACT_APP_API_URL=http://localhost:8000/api/v1
 ```
 
-일부 컴포넌트는 아직 `http://localhost:8000/api/v1`을 직접 사용하므로, 현재는 로컬 개발 주소 기준으로 실행하는 것이 가장 안정적입니다.
+## 프로젝트 구조
 
-## Google 설정
+```text
+C:\labflow_UI
+├─ backend/
+│  ├─ main.py                    # FastAPI app, CORS, router 등록, scheduler 시작
+│  ├─ database.py                # SQLite/PostgreSQL 연결 설정
+│  ├─ models.py                  # SQLAlchemy 모델
+│  ├─ auth_utils.py              # JWT, 비밀번호 해시, 현재 사용자 인증
+│  ├─ migrate_add_gcal.py        # Google Calendar 관련 기존 DB migration 보조
+│  ├─ migrate_noshow_safety.py   # 노쇼/안전교육 migration 보조
+│  ├─ routers/
+│  │  ├─ auth.py                 # 회원가입, 로그인, Google 로그인
+│  │  ├─ reservation.py          # 예약 CRUD, 체크인/아웃
+│  │  ├─ chat.py                 # AI/로컬 예약 채팅 액션
+│  │  ├─ rooms.py                # 채팅방과 메시지 기록
+│  │  ├─ logs.py                 # 사용 로그
+│  │  ├─ safety.py               # 안전교육 인증
+│  │  ├─ noshow.py               # 노쇼와 장비 ban
+│  │  └─ gcal.py                 # Google Calendar API
+│  └─ services/
+│     ├─ google_calendar.py      # OAuth, token 암호화, calendar CRUD/sync/freebusy
+│     └─ login_tickets.py        # Google redirect 후 임시 로그인 ticket
+├─ frontend/
+│  ├─ package.json
+│  └─ src/
+│     ├─ App.jsx                 # 인증 후 전체 shell, 기본 view는 command
+│     ├─ context/AuthContext.jsx # sessionStorage 기반 auth state
+│     ├─ pages/AuthPage.jsx      # 로그인/회원가입/Google 로그인
+│     └─ components/
+│        ├─ CommandCenter.jsx    # 현재 메인 화면
+│        ├─ Calendar.jsx
+│        ├─ EquipmentStatus.jsx
+│        ├─ CheckInOut.jsx
+│        ├─ LogDashboard.jsx
+│        ├─ SafetyBadge.jsx
+│        ├─ NoShowStatusButton.jsx
+│        └─ 기타 실험/보류 컴포넌트
+├─ docs/handoff/command_center_refactor_plan.md
+├─ GCal_handoff.md
+├─ UI_handoff.md
+├─ TROUBLESHOOTING_LOCAL_STARTUP.md
+├─ LabFlow_시작.bat
+└─ LabFlow 종료.bat
+```
 
-Google 로그인과 Calendar 연동을 쓰려면 Google Cloud Console의 OAuth Client에 아래 값을 등록합니다.
+## 주요 API
+
+모든 주요 라우터는 `/api/v1` 아래에 붙습니다.
+
+| 영역 | Endpoint |
+| --- | --- |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/login/form`, `GET /auth/me`, `GET /auth/google/auth-url`, `GET /auth/google/start`, `POST /auth/google/code`, `POST /auth/google/ticket` |
+| Reservations | `GET /reservations/`, `GET /reservations/{id}`, `POST /reservations/`, `PATCH /reservations/{id}`, `DELETE /reservations/{id}`, `POST /reservations/{id}/checkin`, `POST /reservations/{id}/checkout` |
+| Chat | `POST /chat/` |
+| Rooms | `GET /rooms/`, `POST /rooms/`, `GET /rooms/{room_id}/messages`, `DELETE /rooms/{room_id}` |
+| Logs | `GET /logs/`, `GET /logs/{id}`, `POST /logs/`, `GET /logs/equipment/{equipment_id}/summary` |
+| Safety | `GET /safety/status`, `GET /safety/status/{user_id}`, `POST /safety/certify/{user_id}`, `DELETE /safety/certify/{user_id}`, `GET /safety/reminder-needed`, `POST /safety/reminder/mark-sent/{user_id}` |
+| No-show | `GET /noshows/status/{user_id}`, `GET /noshows/bans/active`, `POST /noshows/trigger-check` |
+| Google Calendar | `GET /gcal/status`, `GET /gcal/auth`, `GET /gcal/callback`, `POST /gcal/sync`, `POST /gcal/events`, `POST /gcal/freebusy`, `POST /gcal/disconnect` |
+
+## 채팅 액션 현황
+
+`backend/routers/chat.py`는 Claude 응답 끝의 JSON action 또는 로컬 fallback으로 아래 액션을 처리합니다.
+
+```json
+{
+  "action": "create_reservation",
+  "equipment_id": 2,
+  "user_id": 1,
+  "start_time": "2026-06-05T14:00:00",
+  "end_time": "2026-06-05T15:00:00",
+  "purpose": "sample analysis"
+}
+```
+
+```json
+{ "action": "list_reservations", "user_id": 1 }
+```
+
+```json
+{ "action": "cancel_reservation", "reservation_id": 12 }
+```
+
+```json
+{
+  "action": "update_reservation",
+  "reservation_id": 12,
+  "equipment_id": 2,
+  "start_time": "2026-06-05T16:00:00",
+  "end_time": "2026-06-05T17:00:00",
+  "purpose": "changed purpose"
+}
+```
+
+다음 작업자는 이 액션 처리를 `reservation.py`의 검증 로직과 합치는 것을 먼저 고려하세요.
+
+## Google Calendar 설정
+
+Google Cloud Console OAuth Client에는 로컬 기준으로 다음 값을 등록합니다.
 
 | 항목 | 값 |
 | --- | --- |
-| Authorized JavaScript origins | `http://localhost:3000` |
+| Authorized JavaScript origins | `http://localhost:3000`, 필요하면 `http://127.0.0.1:3000` |
 | Authorized redirect URIs | `http://localhost:8000/api/v1/gcal/callback` |
 
-요청 scope는 다음과 같습니다.
+요청 scope:
 
 ```text
 openid
@@ -184,40 +273,54 @@ profile
 https://www.googleapis.com/auth/calendar.events
 ```
 
-`GOOGLE_CLIENT_SECRET`, refresh token, access token은 프론트엔드에 노출하지 않습니다. `.env`, `client_secret*.json`, `gcal_token.json`, `backend/labflow_dev.db` 같은 로컬 파일은 `.gitignore`에 포함되어 있으며 커밋하지 않습니다.
+Google token은 DB의 `google_accounts`에 암호화되어 저장됩니다. `TOKEN_ENCRYPTION_KEY`가 있으면 그 값을 쓰고, 없으면 개발 기본값 계열로 동작합니다. 운영 성격으로 쓰려면 반드시 고정된 secret을 설정해야 합니다.
 
-## API 요약
+## 로컬 파일과 Git
 
-모든 주요 API는 `/api/v1` 아래에 있습니다.
+다음 파일/폴더는 저장소에 올리지 않는 것이 맞습니다.
 
-| 영역 | Endpoint |
-| --- | --- |
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `GET /auth/google/auth-url`, `POST /auth/google/ticket` |
-| Reservations | `GET /reservations/`, `POST /reservations/`, `PATCH /reservations/{id}`, `DELETE /reservations/{id}`, `POST /reservations/{id}/checkin`, `POST /reservations/{id}/checkout` |
-| Logs | `GET /logs/`, `POST /logs/`, `GET /logs/{id}`, `GET /logs/equipment/{equipment_id}/summary` |
-| Rooms | `GET /rooms/`, `POST /rooms/`, `GET /rooms/{room_id}/messages`, `DELETE /rooms/{room_id}` |
-| Chat | `POST /chat/` |
-| Safety | `GET /safety/status`, `GET /safety/status/{user_id}`, `POST /safety/certify/{user_id}`, `DELETE /safety/certify/{user_id}`, `GET /safety/reminder-needed` |
-| No-show | `GET /noshows/status/{user_id}`, `GET /noshows/bans/active`, `POST /noshows/trigger-check` |
-| Google Calendar | `GET /gcal/status`, `GET /gcal/auth`, `GET /gcal/callback`, `POST /gcal/sync`, `POST /gcal/events`, `POST /gcal/freebusy`, `POST /gcal/disconnect` |
+- `.env`, `.env.*`
+- `client_secret*.json`
+- `gcal_token.json`, `backend/gcal_token.json`
+- `backend/labflow_dev.db`, `*.db`, `*.sqlite3`
+- `backend/venv/`
+- `frontend/node_modules/`
+- `frontend/build/`
+- `*.log`
 
-## 개발 메모
+현재 `.gitignore`는 위 항목 대부분을 포함합니다.
 
-- 기본 DB 파일 `backend/labflow_dev.db`는 로컬 개발 산출물입니다.
-- PostgreSQL을 쓰려면 `DB_MODE=postgres`와 `DATABASE_URL`을 설정하고 `psycopg2-binary` 설치가 필요할 수 있습니다.
-- 새 비밀번호 해시는 Python 3.13 호환을 위해 `pbkdf2_sha256`을 사용합니다. 기존 bcrypt 해시는 검증만 지원합니다.
-- Google token 암호화는 `TOKEN_ENCRYPTION_KEY`가 있으면 그 값을 우선 사용하고, 없으면 `JWT_SECRET_KEY` 또는 개발 기본값에서 키를 파생합니다.
-- `frontend/build`, `node_modules`, `venv`, `.env`, DB 파일, Google secret 파일은 저장소에 올리지 않습니다.
+## 다음 작업 추천 순서
 
-## 앞으로 남은 작업
+1. 깨진 한글 문자열 복구
+   - 우선 사용자에게 보이는 `App.jsx`, `CommandCenter.jsx`, `ChatBot.jsx`, `chat.py` 응답 문자열부터 UTF-8로 복구합니다.
 
-- 매뉴얼 챗봇 RAG 백엔드 연결
-- 파일 동기화 실제 저장소 또는 S3 연동
-- 데이터 분석 챗봇의 Vision/API/Python 분석 엔진 연결
-- 관리자 권한 관리 UI 고도화
-- 테스트 코드와 배포 설정 추가
-- 운영 환경용 CORS, secret, DB migration 전략 정리
+2. 예약 검증 service 분리
+   - 일반 예약 API와 chat action이 같은 생성/수정/취소 로직을 쓰게 만듭니다.
+   - 안전교육, 노쇼 ban, 시간 충돌, Google Calendar sync가 한 곳에서 처리되어야 합니다.
 
----
+3. Command Center 실데이터화
+   - 정적 데모 캘린더를 `/reservations/`와 `/gcal/freebusy` 기반으로 바꿉니다.
+   - 예약 확인/시간 변경 버튼에 실제 동작을 연결합니다.
 
-LabFlow - AI Capstone Design Project 2026
+4. 최소 테스트 추가
+   - 예약 생성 충돌
+   - 안전교육 미인증 예약 거부
+   - 노쇼 ban 예약 거부
+   - chat create/list/update/cancel
+   - Google Calendar는 mock으로 create/update/delete 호출 여부 확인
+
+5. 실행 문서 정리
+   - `GCal_handoff.md`, `UI_handoff.md`, `TROUBLESHOOTING_LOCAL_STARTUP.md`도 인코딩 복구하거나 이 README 기준으로 축약합니다.
+
+## GPT/Codex에게 넘길 때
+
+새 작업을 맡길 때는 보통 이렇게 시작하면 됩니다.
+
+```text
+README.md를 먼저 읽고 현재 상태를 기준으로 작업해줘.
+특히 "가장 중요한 주의점"과 "다음 작업 추천 순서"를 기준으로 판단해줘.
+기존 한글 문자열은 깨져 있을 수 있으니, 깨진 문자열을 의미 있는 한국어로 복구하는 작업과 기능 변경을 구분해서 진행해줘.
+```
+
+기존 handoff 문서는 과거 계획과 깨진 한글이 섞여 있을 수 있으므로, 현재 기준점은 이 README입니다.
