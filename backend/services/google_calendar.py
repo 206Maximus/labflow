@@ -35,6 +35,7 @@ SCOPES = [
 
 DEFAULT_REDIRECT_URI = "http://localhost:8000/api/v1/gcal/callback"
 DEFAULT_TIME_ZONE = "Asia/Seoul"
+GOOGLE_ID_TOKEN_CLOCK_SKEW_SECONDS = 10
 
 
 class GoogleOAuthError(Exception):
@@ -280,7 +281,12 @@ def get_google_profile(creds: Credentials) -> dict:
     client_id = os.getenv("GOOGLE_CLIENT_ID", "")
     try:
         if creds.id_token:
-            profile = google_id_token.verify_oauth2_token(creds.id_token, Request(), client_id)
+            profile = google_id_token.verify_oauth2_token(
+                creds.id_token,
+                Request(),
+                client_id,
+                clock_skew_in_seconds=GOOGLE_ID_TOKEN_CLOCK_SKEW_SECONDS,
+            )
             logger.info(
                 "Google OAuth profile verified from id_token: sub_present=%s, email_present=%s",
                 bool(profile.get("sub")),
